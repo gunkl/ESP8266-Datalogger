@@ -50,14 +50,14 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
 
 # TODO
 **piplot.py** - Some code cleanup
-    Make it easier to add new data, ie, cleanup how dataframes are generated.
+ * Make it easier to add new data, ie, cleanup how dataframes are generated.
                 
 **esp8266_datalogger.ino** - Some code cleanup :-)
-    There's some leftover code from when I was just displaying the data on the display,
-    including creating a line graph, which required an array of data. This can be updated and removed
-    for the current usage.
-    If WiFiUDP gets fixed, or figure out how to fix it, so that I can read the wakeup/reset reason (rst_reason).
-    As soon as I added WiFiUDP, this code stopped compiling.
-    NTP might not actually be required at all - the AWS library gets the time and date (see x-amz-date in
+ * There's some leftover code from when I was just displaying the data on the display,
+     including creating a line graph, which required an array of data. This can be updated and removed
+     for the current usage.
+ * If WiFiUDP gets fixed, or figure out how to fix it, so that I can read the wakeup/reset reason (rst_reason).
+ * As soon as I added WiFiUDP, this code stopped compiling.
+ * NTP might not actually be required at all - the AWS library gets the time and date (see x-amz-date in
     serial output) - if I bothered to figure out how to use it.
             

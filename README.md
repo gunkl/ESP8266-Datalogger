@@ -1,6 +1,6 @@
 # ESP8266-Datalogger
 Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to DynamoDB, with html plot example.
-On the ESP side:
+    On the ESP side:
     System wakes every 10 minutes from deep sleep.
     Gets NTP time. Reads the DHT for temp/humidity. Reads the ADC for voltage.  Puts the data on AWS DynamoDB.
     Lots of data gets dumped to the serial port to tell you what's going on.

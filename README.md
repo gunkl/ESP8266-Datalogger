@@ -7,22 +7,22 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
 
 # Files and Setup
 **piplot.py** - Grabs data from your dynamodb (using boto3) and uses bokeh to plot graphs of your sensor data. 
-            You need to know how to set up boto3 and aws credentials, as well as assign appropriate permissions
+ * You need to know how to set up boto3 and aws credentials, as well as assign appropriate permissions
             to your dynamoDB to allow read access. It assumes default location of credentials in ~/.aws/
-            You will need to edit this to change/add/remove locations, unless you too have a shed and huzzah named
+ * You will need to edit this to change/add/remove locations, unless you too have a shed and huzzah named
             identically to mine.
-            Make sure the DB configuration and locations match the ESP settings.
+ * Make sure the DB configuration and locations match the ESP settings.
             
 **esp8266_datalogger.ino** - Arduino project for the ESP12e-ESP8266 Feather Huzzah board.
-            Hardware: Adafruit Feather Huzzah, LiPo battery, SSD1306 I2C OLED Display, DHT11 sensor
-            This makes use of the AWS SDK, and you need to create keys.h and keys.cpp within the source of the project
+ * Hardware: Adafruit Feather Huzzah, LiPo battery, SSD1306 I2C OLED Display, DHT11 sensor
+ * This makes use of the AWS SDK, and you need to create keys.h and keys.cpp within the source of the project
             containing your credentials (awsKeyID, awsSecKey) in Arduino/libraries/aws-sdk-arduino-esp8266/src/keys.*
-            Similarly, wificonfig.h and .cpp contain "ssid1" and "password1" for WiFi access. I placed these files in
+ * Similarly, wificonfig.h and .cpp contain "ssid1" and "password1" for WiFi access. I placed these files in
             libraries/wificonfig/
-            Make sure the location, DB table name, and settings here for putting data into the DB matches what you 
+ * Make sure the location, DB table name, and settings here for putting data into the DB matches what you 
             have in piplot to pull the data.
-            You may need to change the scaling in adcget() - I have it scaled for the resistor divider I used.
-            You may want to update the timezone settings as well.
+ * You may need to change the scaling in adcget() - I have it scaled for the resistor divider I used.
+ * You may want to update the timezone settings as well.
             
 # GOTCHAS - I ran into so many of these during this project.
  * NTP - I tried using a "polling interval" style NTP library.  It would take forever to get the first sync.

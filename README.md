@@ -25,24 +25,24 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
             You may want to update the timezone settings as well.
             
 # GOTCHAS - I ran into so many of these during this project.
-            NTP - I tried using a "polling interval" style NTP library.  It would take forever to get the first sync.
-                  Also, the clock on the ESP is actually quite good at keeping time when not sleeping, so this would
-                  have been overkill. For the purposes of deep sleep and wakeup, I switched to an instant NTP grab.
-                  Unfortunately, it appears some clocks in the pool are wrong (no way) - and I've seen dates for 2036.
+ * NTP - I tried using a "polling interval" style NTP library.  It would take forever to get the first sync.
+    * Also, the clock on the ESP is actually quite good at keeping time when not sleeping, so this would
+      have been overkill. For the purposes of deep sleep and wakeup, I switched to an instant NTP grab.
+      Unfortunately, it appears some clocks in the pool are wrong (no way) - and I've seen dates for 2036.
                   
-            WiFiUDP - As soon as I added this library, the code wouldn't compile when trying to include rst_reason to
+ * WiFiUDP - As soon as I added this library, the code wouldn't compile when trying to include rst_reason to
                   read why the system was reset. (Usually deep sleep)
             
-            Libraries - In most cases you will need to grab the libraries and versions I've put in the code itself.
-                  A lot of these are pulls from Git. Sorry to report, I don't remember which, but some of them have
+ * Libraries - In most cases you will need to grab the libraries and versions I've put in the code itself.
+    * A lot of these are pulls from Git. Sorry to report, I don't remember which, but some of them have
                   bug fixes that I pulled from Git from specific pull requests that aren't merged yet.
                   AWS-sdk is probably one of these.
 
-            Crashes - The AWS libraries seem to cause a lot of these, making running the code in a constant-on loop
+ * Crashes - The AWS libraries seem to cause a lot of these, making running the code in a constant-on loop
                   not really practical.  For example, if wifi disconnects, I'm not handling it right I guess, and 
                   AWS will cause a stack crash.
             
-            AWS-sdk - See above in Libraries, this one is a beast and it's under dev.  Also, the current code I'm
+ * AWS-sdk - See above in Libraries, this one is a beast and it's under dev.  Also, the current code I'm
                   running has the SSL Cert fingerprint hard coded. I had to change it for us-west region so that
                   it would report "Certificate Matches" - see the serial output.  Side note, even if it says the cert
                   doesn't match, it still posts your data O:-)

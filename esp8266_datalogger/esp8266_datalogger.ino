@@ -60,9 +60,9 @@ PutItemInput putItemInput;
 
 
 /* Contants describing DynamoDB table and values being used. */
-static const char* AWS_REGION = "us-west-1";
-static const char* AWS_ENDPOINT = "amazonaws.com";
-const char* TABLE_NAME = "sensors_v2"; // table should have "location" as the partition key, and "time_utc_iso8601" as the sort key.
+char AWS_REGION[32] = "us-west-1";
+char AWS_ENDPOINT[32] = "amazonaws.com";
+char TABLE_NAME[32] = "sensors_v2"; // table should have "location" as the partition key, and "time_utc_iso8601" as the sort key.
 
 #define DHTTYPE DHT11
 #define DHT11_PIN 14
@@ -72,7 +72,7 @@ const char* TABLE_NAME = "sensors_v2"; // table should have "location" as the pa
 #define SSD1306_ADDRESS 0x3C
 #define ONBOARDLED 0 // on board LED pin blink at startup
 const unsigned int update_delay = 2000; // update every 2 seconds, this loop goes on until we get the time and deep sleep.
-const unsigned int deepsleep_time = (10*60*1000000); // 1000000 is 1 second, how long to deep sleep
+unsigned int deepsleep_time = (10*60*1000000); // 1000000 is 1 second, how long to deep sleep
 
 // init DHT sensor - http://randomnerdtutorials.com/esp8266-dht11dht22-temperature-and-humidity-web-server-with-arduino-ide/
 DHT dht(DHT11_PIN, DHTTYPE);
@@ -132,10 +132,10 @@ MyRenderer my_renderer;
 MenuSystem ms(my_renderer);
 
 MenuItem mm_mi1("Restart (no changes)", &on_exit);
-MenuItem mm_mi2("Set Wireless SSID / Password", &on_mainconfig);
-MenuItem mm_mi3("Advanced Settings", &on_advancedconfig);
+MenuItem mm_mi2("Basic Settings", &on_mainconfig);
+// MenuItem mm_mi3("Advanced Settings", &on_advancedconfig);
 MenuItem mm_mi4("RESET CONFIG", &on_eraseconfig);
-Menu mu1("Level 1 - Item 3 (Menu)");
+Menu mu1("(Menu)");
 // BackMenuItem mu1_mi0("Level 2 - Back (Item)", &on_component_selected, &ms);
 // MenuItem mu1_mi1("Level 2 - Item 1 (Item)", &on_component_selected);
 // NumericMenuItem mu1_mi2("Level 2 - Txt Item 2 (Item)", nullptr, 0, 0, 2, 1, format_color);
@@ -180,7 +180,8 @@ void adcget() {
   }
 }
 
-boolean fileWrite(String name, String content){
+boolean fileWrite(String name, String filemode, String content){
+  char stringBuffer[3];
   //open the file for writing.
   //Modes:
   //"r"  Opens a file for reading. The file must exist.
@@ -191,7 +192,8 @@ boolean fileWrite(String name, String content){
   //"a+"  Opens a file for reading and appending.:
 
   //choosing w because we'll both write to the file and then read from it at the end of this function.
-  File file = SPIFFS.open(name.c_str(), "w");
+  sprintf(stringBuffer, "%s", (filemode).c_str());
+  File file = SPIFFS.open(name.c_str(), stringBuffer);
 
   //verify the file opened:
   if (!file) {
@@ -213,6 +215,7 @@ boolean fileWrite(String name, String content){
 
 
 void fileRead(String name){
+  char new_deepsleep[4];
   //read file from SPIFFS and store it as a String variable
   String contents;
   File file = SPIFFS.open(name.c_str(), "r");
@@ -226,9 +229,21 @@ void fileRead(String name){
       while(file.available()) {
         //Lets read line by line from the file
         file.readStringUntil('\n').toCharArray(ssid1, 64);
-        // Serial.println("SSID: " + String(ssid1));
+        Serial.println("SSID: " + String(ssid1));
         file.readStringUntil('\n').toCharArray(password1, 64);
         // Serial.println("password: " + String(password1));
+        file.readStringUntil('\n').toCharArray(AWS_REGION, 32);
+        Serial.println("AWS_REGION: " + String(AWS_REGION));
+        file.readStringUntil('\n').toCharArray(AWS_ENDPOINT, 32);
+        Serial.println("AWS_ENDPOINT: " + String(AWS_ENDPOINT));
+        file.readStringUntil('\n').toCharArray(TABLE_NAME, 32);
+        Serial.println("TABLE_NAME: " + String(TABLE_NAME));
+        file.readStringUntil('\n').toCharArray(new_deepsleep, 4);
+        int new_deepsleep_i;
+        sscanf(new_deepsleep, "%d", &new_deepsleep_i);
+        Serial.println("Deep sleep (seconds): " + String(new_deepsleep_i));
+        deepsleep_time = (new_deepsleep_i * 60 * 1000000);
+        
     }
    }
   }
@@ -244,7 +259,7 @@ boolean fileRemove(String name){
 void displaymenu() {
     ms.get_root_menu().add_item(&mm_mi1);
     ms.get_root_menu().add_item(&mm_mi2);
-    ms.get_root_menu().add_item(&mm_mi3);
+    // ms.get_root_menu().add_item(&mm_mi3);
     ms.get_root_menu().add_item(&mm_mi4);
     ms.get_root_menu().add_menu(&mu1);
     // mu1.add_item(&mu1_mi0);
@@ -289,7 +304,7 @@ void startfs() {
     fileRead("/datalogger.conf");
   }
   else {
-    Serial.println("No SPIFFS found, formatting...");
+    Serial.println("No SPIFFS found, or no config found, formatting...");
     SPIFFS.format();
     displaymenu();
     serialFlush();
@@ -309,8 +324,9 @@ void on_exit(MenuComponent* p_menu_component) {
   config_reset();
   }
 
-String menuinput(char *minput, String defaultval){
-    int numchar = Serial.readBytesUntil('\r', minput, 64);
+String menuinput(char *minput, String defaultval, int fieldsize){
+    // fieldsize should always be +1 the allowed size of the destination field
+    int numchar = Serial.readBytesUntil('\r', minput, fieldsize);
     if (numchar > 0){
       minput[numchar]='\0';  // terminate string with NULL
       return minput;
@@ -328,32 +344,30 @@ void on_mainconfig(MenuComponent* p_menu_component) {
     serialFlush();
     Serial.println("");
     Serial.println("Enter SSID: [" + String(ssid1) + "] ");
-    String newssid1 = menuinput(minput, String(ssid1));
+    String newssid1 = menuinput(minput, String(ssid1), 64);
     Serial.println("Enter password: [" + String(password1) + "] ");
-    String newpassword1 = menuinput(minput, String(password1));
+    String newpassword1 = menuinput(minput, String(password1), 64);
+    Serial.println("Enter AWS REGION: [" + String(AWS_REGION) + "] ");
+    String new_AWS_REGION = menuinput(minput, String(AWS_REGION), 32);
+    Serial.println("Enter AWS ENDPOINT: [" + String(AWS_ENDPOINT) + "] ");
+    String new_AWS_ENDPOINT = menuinput(minput, String(AWS_ENDPOINT), 32);
+    Serial.println("Enter DynamoDB table name: [" + String(TABLE_NAME) + "] ");
+    String new_TABLE_NAME = menuinput(minput, String(TABLE_NAME), 32);
+    // (10*60*1000000) = 10 minutes
+    Serial.println("Deep sleep time in minutes (max 360): [" + String(deepsleep_time/(60*1000000)) + "] ");
+    String new_deepsleep = menuinput(minput, String(deepsleep_time/(60*1000000)), 4);
+    //
     Serial.println("Writing config...");
-    fileWrite("/datalogger.conf", newssid1 + "\n" + newpassword1 + "\n");
+    fileWrite("/datalogger.conf", "a", newssid1 + "\n" + newpassword1 + "\n");
+    fileWrite("/datalogger.conf", "a", new_AWS_REGION + "\n" + new_AWS_ENDPOINT + "\n" + new_TABLE_NAME + "\n");
+    fileWrite("/datalogger.conf", "a", new_deepsleep + "\n");
     config_reset();
 }
 
-void on_advancedconfig(MenuComponent* p_menu_component) {
-    char minput[64];
-    Serial.println(p_menu_component->get_name());
-    Serial.setTimeout(120000);  // 120 second input timeout
-    serialFlush();
-    Serial.println("");
-    Serial.println("Enter SSID: [" + String(ssid1) + "] ");
-    String newssid1 = menuinput(minput, String(ssid1));
-    Serial.println("Enter password: [" + String(password1) + "] ");
-    String newpassword1 = menuinput(minput, String(password1));
-    Serial.println("Writing config...");
-    fileWrite("/datalogger.conf", newssid1 + "\n" + newpassword1 + "\n");
-    config_reset();
-}
 
 void config_reset(){
     Serial.println("Restarting to complete changes..");
-    ESP.reset();
+    ESP.restart();
 }
 
 void setup() {

@@ -241,7 +241,7 @@ void fileRead(String name){
         file.readStringUntil('\n').toCharArray(new_deepsleep, 4);
         int new_deepsleep_i;
         sscanf(new_deepsleep, "%d", &new_deepsleep_i);
-        Serial.println("Deep sleep (seconds): " + String(new_deepsleep_i));
+        Serial.println("Deep sleep (minutes): " + String(new_deepsleep_i));
         deepsleep_time = (new_deepsleep_i * 60 * 1000000);
         
     }
@@ -358,7 +358,7 @@ void on_mainconfig(MenuComponent* p_menu_component) {
     String new_deepsleep = menuinput(minput, String(deepsleep_time/(60*1000000)), 4);
     //
     Serial.println("Writing config...");
-    fileWrite("/datalogger.conf", "a", newssid1 + "\n" + newpassword1 + "\n");
+    fileWrite("/datalogger.conf", "w", newssid1 + "\n" + newpassword1 + "\n");
     fileWrite("/datalogger.conf", "a", new_AWS_REGION + "\n" + new_AWS_ENDPOINT + "\n" + new_TABLE_NAME + "\n");
     fileWrite("/datalogger.conf", "a", new_deepsleep + "\n");
     config_reset();
@@ -511,7 +511,7 @@ void loop()
       // rescale(); // dont need to rescale either (see rotatevals)
       ESP.wdtFeed(); // reset watchdog timer
       putItem();
-      Serial.println("Sleeping: " + String(deepsleep_time));
+      Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
       delay(250);
       display.displayOff();
       ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second

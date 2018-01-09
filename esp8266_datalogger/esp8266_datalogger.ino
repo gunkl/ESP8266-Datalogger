@@ -92,6 +92,7 @@ Timezone myTZ(myDST, mySTD);
 TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abbrev
 time_t utc, local;
 int8_t timeZone = 0;
+unsigned int ttl_expire_seconds = (60*86400); // 86400 is minutes in 60 days, * 60 = seconds for ttl expiry of data
 
 //
 
@@ -479,7 +480,7 @@ void loop()
   utc = ntpClient.getUnixTime();
   local = myTZ.toLocal(utc, &tcr);
   tz8601time(local, tcr -> abbrev);
-  Serial.println("Current time: " + iso8601date + iso8601time);
+  Serial.println("Current time: " + iso8601date + iso8601time + " UTC:" + String(utc));
   if (!iso8601date.startsWith("1970")) {
     Serial.println("Time is set");
     timeisset = true;
@@ -550,7 +551,7 @@ void loop()
 }
 
 void putItem() {
-  char numberBuffer[6];
+  char numberBuffer[12];
   char stringBuffer[28];
 
   AttributeValue dTime;
@@ -581,12 +582,11 @@ void putItem() {
   dADC.setN(numberBuffer);
   MinimalKeyValuePair < MinimalString, AttributeValue > att1("voltage", dADC);
 
-/*
-  AttributeValue dAltitude;
-  sprintf(numberBuffer, "%d", senseAltitudeVals);
-  dAltitude.setN(numberBuffer);
-  MinimalKeyValuePair < MinimalString, AttributeValue > att7("altitude", dAltitude);
-*/
+  AttributeValue dTtl; // send ttl field as utc epoch time to enable auto data expiry on dynamodb TTL settings
+  sprintf(numberBuffer, "%d", int(int(utc) + ttl_expire_seconds));
+  dTtl.setN(numberBuffer);
+  MinimalKeyValuePair < MinimalString, AttributeValue > att7("ttl", dTtl);
+
 /*
   AttributeValue dPressure;
   sprintf(numberBuffer, "%d", sensePressure);
@@ -599,10 +599,10 @@ void putItem() {
   dPressure.setS(numberBuffer);
   MinimalKeyValuePair < MinimalString, AttributeValue > att8("pressure", dPressure);
 */
-  MinimalKeyValuePair<MinimalString, AttributeValue> itemArray[] = { att1, att2, att3, att4, att5, att6 };
+  MinimalKeyValuePair<MinimalString, AttributeValue> itemArray[] = { att1, att2, att3, att4, att5, att6, att7 };
 
   /* Set values for putItemInput. */
-  putItemInput.setItem(MinimalMap < AttributeValue > (itemArray, 6));
+  putItemInput.setItem(MinimalMap < AttributeValue > (itemArray, 7));
   putItemInput.setTableName(TABLE_NAME);
 
   /* perform putItem and check for errors. */

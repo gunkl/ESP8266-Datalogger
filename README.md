@@ -4,6 +4,8 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
    * System wakes every 10 minutes from deep sleep.
    * Gets NTP time. Reads the DHT for temp/humidity. Reads the ADC for voltage.  Puts the data on AWS DynamoDB.
    * Lots of data gets dumped to the serial port to tell you what's going on.
+   * You can enable dynamodb "TTL" to expire data. Default is to post a TTL of +60 days.
+   * Serial port configuration is possible for many settings at board startup.
 
 # Files and Setup
 **piplot.py** - Grabs data from your dynamodb (using boto3) and uses bokeh to plot graphs of your sensor data. 
@@ -51,8 +53,10 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
 # TODO
 **piplot.py** - Some code cleanup
  * Make it easier to add new data, ie, cleanup how dataframes are generated.
+ * Instead of using Timezone corrected data, use UTC, and fix the timezones in the graph rendering.
                 
 **esp8266_datalogger.ino** - Some code cleanup :-)
+ * Instead of using Timezone corrected data, use UTC, and fix the timezones in the graph rendering.
  * There's some leftover code from when I was just displaying the data on the display,
      including creating a line graph, which required an array of data. This can be updated and removed
      for the current usage.

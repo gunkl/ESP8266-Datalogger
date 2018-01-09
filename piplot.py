@@ -74,7 +74,15 @@ def query_dynamo(table=None, location=None):
         #    ":end_date": str(datetime.datetime.utcnow().isoformat())},
         # FilterExpression="time_utc_iso8601 between :start_date and :end_date",
     )
-    return response.get(u'Items')
+    results = response.get(u'Items')
+    while 'LastEvaluatedKey' in response:
+        response = table.query(
+            ProjectionExpression="humidity, temperature, setpoint, time_utc_iso8601, voltage",
+            KeyConditionExpression=Key('location').eq(location) & Key('time_utc_iso8601').between((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat(),datetime.datetime.utcnow().isoformat()),
+            ExclusiveStartKey=response['LastEvaluatedKey']
+        )
+        results += response.get(u'Items')
+    return results
 
 
 def main_run():

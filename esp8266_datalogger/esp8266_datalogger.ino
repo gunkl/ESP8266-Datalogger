@@ -22,13 +22,13 @@
    Using library EasyNTPClient at version 1.1.0
    Using library Time at version 1.5
    Using library Timezone
-   Using library aws-sdk-arduino-esp8266 at version 0.9.1-beta (also contains keys.h/cpp with aws keys)
+   Using library aws-sdk-arduino-esp8266 at version 0.9.1-beta
    Using library ESP8266WiFi at version 1.0
-   Using library wificonfig (contains wifi ssid and password)
    Using library DHT at version
    Using library Wire at version
    Using library esp8266-oled-ssd1306
    Using library Adafruit_Sensor-master
+   Using library arduino-menusystem 
 */
 #include <FS.h> // spiffs filesystem
 #include <EasyNTPClient.h> // https://github.com/aharshac/EasyNTPClient
@@ -36,20 +36,21 @@
 #include <Timezone.h>    //https://github.com/JChristensen/Timezone
 #include <AmazonDynamoDBClient.h>
 #include <ESP8266AWSImplementations.h>
-#include <keys.h>
-
-// #include <wificonfig.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <DHT.h>
 #include <Wire.h>
 #include <SSD1306.h>
-#include <MenuSystem.h>
-#include "CustomNumericMenuItem.h"
-#include "MyRenderer.h"
+// #include <Adafruit_Sensor.h> // for bmp180
+// #include <Adafruit_BMP085_U.h> // for bmp180
+#include <MenuSystem.h>  // https://github.com/jonblack/arduino-menusystem
+#include "CustomNumericMenuItem.h"  // part of menusystem
+#include "MyRenderer.h"  // part of menusystem
 
 WiFiUDP Udp;
 EasyNTPClient ntpClient(Udp, "pool.ntp.org", (0)); // 0 = GMT, use the timezone library to set the time zone.
+
+// Adafruit_BMP085_Unified bmp = Adafruit_BMP085_Unified(10085);
 
 Esp8266HttpClient httpClient;
 Esp8266DateTimeProvider dateTimeProvider;
@@ -95,14 +96,13 @@ int8_t timeZone = 0;
 //
 
 // temp display and scaling stuff
-const int SENSE_ARRAY_SIZE = 128;
-int senseTempVals[SENSE_ARRAY_SIZE];
+int senseTempVals;
 int scaleTempMinDefault = 50;
 int scaleTempMin = 50;
 int scaleTempMaxDefault = 80;
 int scaleTempMax = 80;
 int scaleTempVar = 20; // add/sub 10 degrees (20 total) to min/max for scale.
-int senseHumidVals[SENSE_ARRAY_SIZE];
+int senseHumidVals;
 int scaleHumidMinDefault = 25;
 int scaleHumidMin = 25;
 int scaleHumidMax = 60;
@@ -110,6 +110,9 @@ int scaleHumidMaxDefault = 60;
 int scaleHumidVar = 20;
 bool first = true;
 int adcval = 0;
+int senseAltitudeVals;
+// float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
+int sensePressure;
 
 // menu config
 // forward declarations
@@ -125,6 +128,8 @@ void on_advancedconfig(MenuComponent* p_menu_component);
 // wifi vars
 char ssid1[64];
 char password1[64];
+char awsKeyID[24];
+char awsSecKey[48];
 
 // Menu variables
 
@@ -238,6 +243,10 @@ void fileRead(String name){
         Serial.println("AWS_ENDPOINT: " + String(AWS_ENDPOINT));
         file.readStringUntil('\n').toCharArray(TABLE_NAME, 32);
         Serial.println("TABLE_NAME: " + String(TABLE_NAME));
+        file.readStringUntil('\n').toCharArray(awsKeyID, 24);
+        Serial.println("awsKeyID: " + String(awsKeyID));
+        file.readStringUntil('\n').toCharArray(awsSecKey, 48);
+        Serial.println("awsSecKey: " + String(awsSecKey));
         file.readStringUntil('\n').toCharArray(new_deepsleep, 4);
         int new_deepsleep_i;
         sscanf(new_deepsleep, "%d", &new_deepsleep_i);
@@ -291,7 +300,7 @@ bool getmenumode(){
     return true;
   }
   else {
-    Serial.println("mm not detected, got: " + String(minput));
+    Serial.println("Booting...");
     return false;
   }
 }
@@ -353,13 +362,17 @@ void on_mainconfig(MenuComponent* p_menu_component) {
     String new_AWS_ENDPOINT = menuinput(minput, String(AWS_ENDPOINT), 32);
     Serial.println("Enter DynamoDB table name: [" + String(TABLE_NAME) + "] ");
     String new_TABLE_NAME = menuinput(minput, String(TABLE_NAME), 32);
+    Serial.println("Enter DynamoDB awsKeyID: [" + String(awsKeyID) + "] ");
+    String new_awsKeyID = menuinput(minput, String(awsKeyID), 24);
+    Serial.println("Enter DynamoDB awsSecKey: [" + String(awsSecKey) + "] ");
+    String new_awsSecKey = menuinput(minput, String(awsSecKey), 48);
     // (10*60*1000000) = 10 minutes
     Serial.println("Deep sleep time in minutes (max 360): [" + String(deepsleep_time/(60*1000000)) + "] ");
     String new_deepsleep = menuinput(minput, String(deepsleep_time/(60*1000000)), 4);
     //
     Serial.println("Writing config...");
     fileWrite("/datalogger.conf", "w", newssid1 + "\n" + newpassword1 + "\n");
-    fileWrite("/datalogger.conf", "a", new_AWS_REGION + "\n" + new_AWS_ENDPOINT + "\n" + new_TABLE_NAME + "\n");
+    fileWrite("/datalogger.conf", "a", new_AWS_REGION + "\n" + new_AWS_ENDPOINT + "\n" + new_TABLE_NAME + "\n" + new_awsKeyID + "\n" + new_awsSecKey + "\n");
     fileWrite("/datalogger.conf", "a", new_deepsleep + "\n");
     config_reset();
 }
@@ -394,9 +407,11 @@ void setup() {
   //rsti = ESP.getResetInfoPtr();
   //
   pinMode(dht_power, OUTPUT);
-  dht.begin();
+  //
   //
   Wire.begin();
+  // bmp.begin();
+  dht.begin();
   //
   // SSD OLED 1306 setup
   display.init();
@@ -455,10 +470,9 @@ void setup() {
 
 void loop()
 {
+  float floatbuf;
   if (first) {
     first = false;
-    memset(senseTempVals, 0, SENSE_ARRAY_SIZE);  // FIXME: I dont need these arrays 
-    memset(senseHumidVals, 0, SENSE_ARRAY_SIZE); // now that i only submit one value per deep sleep cycle.
     timeisset = false;
   }
   //
@@ -479,9 +493,30 @@ void loop()
   while (!reading) {
     digitalWrite(dht_power, LOW); // turn on the DHT sensor, wired to (-) pin. (+) wired to +power bus.
     delay(150);
-    senseTempVals[SENSE_ARRAY_SIZE - 1] = int(dht.readTemperature(true));
-    senseHumidVals[SENSE_ARRAY_SIZE - 1] = int(dht.readHumidity());
-    if (senseTempVals[SENSE_ARRAY_SIZE - 1] < 300)
+    /* for dht
+    senseTempVals = int(dht.readTemperature(true));
+    senseHumidVals = int(dht.readHumidity());
+    */ 
+    // sensors_event_t event;
+    // bmp.getEvent(&event);
+    // bmp.getTemperature(&floatbuf);
+    // bmp.getHumidity;
+    ESP.wdtFeed(); // reset watchdog timer
+    // senseTempVals = int(floatbuf*9/5+32);
+    senseTempVals = int(dht.readTemperature(true));
+    senseHumidVals = int(dht.readHumidity());
+    // float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
+    // sensePressure = int(event.pressure);
+    // senseAltitudeVals = int(bmp.pressureToAltitude(seaLevelPressure, event.pressure));
+    // Serial.println("Altitude: " + String(senseAltitudeVals) + "m");
+    // Serial.println("Pressure: " + String(sensePressure) + " hPa");
+    //
+    Serial.print("Temperature = ");
+    Serial.println(senseTempVals);
+    Serial.print("Humidity = ");
+    Serial.println(senseHumidVals);
+    //
+    if (senseTempVals < 300 && senseHumidVals < 100)
     {
       reading = true;
       digitalWrite(dht_power, HIGH); // turn off DHT sensor
@@ -492,13 +527,8 @@ void loop()
       delay(1000);
     }
   }
-  //
-  Serial.print("Temperature = ");
-  Serial.println(senseTempVals[SENSE_ARRAY_SIZE - 1]);
-  Serial.print("Humidity = ");
-  Serial.println(senseHumidVals[SENSE_ARRAY_SIZE - 1]);
-  //
-  ESP.wdtFeed(); // reset watchdog timer
+
+ 
 
   if (reading) {
     if (timeisset) {
@@ -506,9 +536,8 @@ void loop()
       adcget();
       Serial.println("ADC%: " + String(adcval));
       Serial.println("ADC: " + String(analogRead(A0)));
-      // rotatevals(); // removing because we dont need to display this anymore, the line graph isnt helpful anyway ;)
-      printtext((String(senseTempVals[SENSE_ARRAY_SIZE - 1]) + (char)247 + "F" + " - " + iso8601time.substring(0, 8)), String(senseHumidVals[SENSE_ARRAY_SIZE - 1]) + "% Humid", "Batt: " + String(adcval) + "%", "");
-      // rescale(); // dont need to rescale either (see rotatevals)
+      // printtext((String(senseTempVals) + (char)247 + "F" + " - " + iso8601time.substring(0, 8)), String(senseHumidVals) + "% Humid", "Batt: " + String(adcval) + "%", String(sensePressure) + " " + String(senseAltitudeVals));
+      printtext((String(senseTempVals) + (char)247 + "F" + " - " + iso8601time.substring(0, 8)), String(senseHumidVals) + "% Humid", "Batt: " + String(adcval) + "%", "");
       ESP.wdtFeed(); // reset watchdog timer
       putItem();
       Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
@@ -521,8 +550,8 @@ void loop()
 }
 
 void putItem() {
-  char numberBuffer[4];
-  char stringBuffer[65];
+  char numberBuffer[6];
+  char stringBuffer[28];
 
   AttributeValue dTime;
   sprintf(stringBuffer, "%s", (iso8601date + iso8601time).c_str());
@@ -538,12 +567,12 @@ void putItem() {
   MinimalKeyValuePair < MinimalString, AttributeValue > att3("sensortype", dType);
 
   AttributeValue dHumidity;
-  sprintf(numberBuffer, "%d", senseHumidVals[SENSE_ARRAY_SIZE - 1]);
+  sprintf(numberBuffer, "%d", senseHumidVals);
   dHumidity.setN(numberBuffer);
   MinimalKeyValuePair < MinimalString, AttributeValue > att4("humidity", dHumidity);
 
   AttributeValue dTemp;
-  sprintf(numberBuffer, "%d", senseTempVals[SENSE_ARRAY_SIZE - 1]);
+  sprintf(numberBuffer, "%d", senseTempVals);
   dTemp.setN(numberBuffer);
   MinimalKeyValuePair < MinimalString, AttributeValue > att5("temperature", dTemp);
 
@@ -552,6 +581,24 @@ void putItem() {
   dADC.setN(numberBuffer);
   MinimalKeyValuePair < MinimalString, AttributeValue > att1("voltage", dADC);
 
+/*
+  AttributeValue dAltitude;
+  sprintf(numberBuffer, "%d", senseAltitudeVals);
+  dAltitude.setN(numberBuffer);
+  MinimalKeyValuePair < MinimalString, AttributeValue > att7("altitude", dAltitude);
+*/
+/*
+  AttributeValue dPressure;
+  sprintf(numberBuffer, "%d", sensePressure);
+  dPressure.setN(numberBuffer);
+  MinimalKeyValuePair < MinimalString, AttributeValue > att8("pressure", dPressure);
+*/
+/*
+  AttributeValue dPressure;
+  sprintf(numberBuffer, "%s", (String(sensePressure)).c_str());
+  dPressure.setS(numberBuffer);
+  MinimalKeyValuePair < MinimalString, AttributeValue > att8("pressure", dPressure);
+*/
   MinimalKeyValuePair<MinimalString, AttributeValue> itemArray[] = { att1, att2, att3, att4, att5, att6 };
 
   /* Set values for putItemInput. */
@@ -608,13 +655,14 @@ void putItem() {
   }
 }
 */ 
-
+/* no longer rotating values
 void rotatevals() {
   for (uint8_t i = 0; i < SENSE_ARRAY_SIZE - 1; i++) {
     senseTempVals[i] = senseTempVals[i + 1];
     senseHumidVals[i] = senseHumidVals[i + 1];
   }
 }
+*/
 
 void printtext(String line1, String line2, String line3, String line4) {
   display.clear();
@@ -674,7 +722,8 @@ void rescale() {
 
 void tz8601time(time_t t, char *tz) {
   iso8601date = String(year(t)) + "-" + zeropad(month(t)) + "-" + zeropad(day(t)) + "T";
-  iso8601time = zeropad(hour(t)) + ":" + zeropad(minute(t)) + ":" + zeropad(second(t)) + ".000000";
+  // iso8601time = zeropad(hour(t)) + ":" + zeropad(minute(t)) + ":" + zeropad(second(t)) + ".000000";
+  iso8601time = zeropad(hour(t)) + ":" + zeropad(minute(t)) + ":" + zeropad(second(t));
 }
 
 //Function to print time with time zone
@@ -814,3 +863,21 @@ void serial_handler() {
                 break;
         }
 }
+
+/*
+void displaySensorDetails(void)
+{
+  sensor_t sensor;
+  bmp.getSensor(&sensor);
+  Serial.println("------------------------------------");
+  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
+  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
+  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
+  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println(" hPa");
+  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println(" hPa");
+  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println(" hPa");  
+  Serial.println("------------------------------------");
+  Serial.println("");
+  delay(500);
+}
+*/

@@ -1,3 +1,6 @@
+# feature/use_display
+ * Old code base that used the SSD1306 display as well, I may not maintan this.
+
 # ESP8266-Datalogger
 Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to DynamoDB, with html plot example.
  * On the ESP side:

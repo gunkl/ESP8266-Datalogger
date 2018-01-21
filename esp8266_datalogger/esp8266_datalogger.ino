@@ -465,6 +465,7 @@ void setup() {
   ddbClient.setDateTimeProvider(&dateTimeProvider);
 }
 
+
 void loop()
 {
   float floatbuf;
@@ -475,7 +476,8 @@ void loop()
   //
   utc = ntpClient.getUnixTime();
   Serial.println("Current time UTC:" + String(utc));
-  if ((utc > (bad_time + 1000)) && (int(utc) != 0) && (utc < (bad_time - 1000))) {
+  // if ((utc > (bad_time + 1000)) && (int(utc) != 0) && (utc < (bad_time - 1000))) {
+  if ((utc > (bad_time + 1000) || (utc < (bad_time - 1000))) && (int(utc) != 0)) {
     Serial.println("Time is set");
     timeisset = true;
   }

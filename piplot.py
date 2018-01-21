@@ -30,7 +30,7 @@ from bokeh.io import output_file, save
 from bokeh.layouts import column
 from boto3.dynamodb.conditions import Key, Attr
 
-dynamodb_table = "sensors_v2"  # Send updates to AWS DynamoDB, or set to None to not do this.
+dynamodb_table = "sensors_v3"  # Send updates to AWS DynamoDB, or set to None to not do this.
 locations = ['huzzah-01', 'shed-outside']
 
 class DecimalEncoder(json.JSONEncoder):
@@ -43,7 +43,7 @@ class DecimalEncoder(json.JSONEncoder):
 def get_data(locations=None):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(dynamodb_table)
-    pdata = []
+    # pdata = []
     ddata = {}
     for location in locations:
         ddata[location] = {}
@@ -53,22 +53,27 @@ def get_data(locations=None):
         ddata[location]['voltage'] = []
         rawdata = query_dynamo(table=table, location=location)
         for item in rawdata:
-            pdata.append({'location':location, 'humidity':int(item.get('humidity')), 'temperature':int(item.get('temperature')), 'time':int(time.mktime((dateutil.parser.parse(item.get('time_utc_iso8601'))).timetuple()))})
+            # pdata.append({'location':location, 'humidity':int(item.get('humidity')), 'temperature':int(item.get('temperature')), 'time':int(time.mktime((dateutil.parser.parse(item.get('epochtime'))).timetuple()))})
             ddata[location]['humidity'].append(int(item.get('humidity', 0)))
             ddata[location]['temperature'].append(int(item.get('temperature', 0)))
             ddata[location]['voltage'].append(int(item.get('voltage', 0)))
-            ddata[location]['time'].append(dateutil.parser.parse(item.get('time_utc_iso8601')))
-    return pdata, ddata
+            # ddata[location]['time'].append(dateutil.parser.parse(item.get('time_utc_iso8601')))
+            ddata[location]['time'].append(datetime.datetime.fromtimestamp((item.get('epochtime'))))
+            # ddata[location]['time'].append((item.get('epochtime')))
+    return ddata
 
 
 def query_dynamo(table=None, location=None):
-    startdate = str((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat())
-    enddate = str(datetime.datetime.utcnow().isoformat())
+    # startdate = str((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat())
+    # enddate = str(datetime.datetime.utcnow().isoformat())
+    startdate = str((datetime.datetime.utcnow() - datetime.timedelta(days=7)))
+    enddate = str(datetime.datetime.utcnow())
     response = table.query(
-        ProjectionExpression="humidity, temperature, setpoint, time_utc_iso8601, voltage",
+        ProjectionExpression="humidity, temperature, setpoint, epochtime, voltage",
         # ExpressionAttributeNames={"#yr": "year"},  # Expression Attribute Names for Projection Expression only.
         # KeyConditionExpression=Key('year').eq(1992) & Key('title').between('A', 'L')
-        KeyConditionExpression=Key('location').eq(location) & Key('time_utc_iso8601').between((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat(),datetime.datetime.utcnow().isoformat()),
+        # KeyConditionExpression=Key('location').eq(location) & Key('time').between((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat(),datetime.datetime.utcnow().isoformat()),
+        KeyConditionExpression=Key('location').eq(location) & Key('epochtime').between(int(time.time() - 86400*7),int(time.time())),
         # ExpressionAttributeValues= {
         #    ":start_date": str((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat()),
         #    ":end_date": str(datetime.datetime.utcnow().isoformat())},
@@ -77,8 +82,8 @@ def query_dynamo(table=None, location=None):
     results = response.get(u'Items')
     while 'LastEvaluatedKey' in response:
         response = table.query(
-            ProjectionExpression="humidity, temperature, setpoint, time_utc_iso8601, voltage",
-            KeyConditionExpression=Key('location').eq(location) & Key('time_utc_iso8601').between((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat(),datetime.datetime.utcnow().isoformat()),
+            ProjectionExpression="humidity, temperature, setpoint, epochtime, voltage",
+            KeyConditionExpression=Key('location').eq(location) & Key('epochtime').between(int(time.time() - 86400*7),int(time.time())),
             ExclusiveStartKey=response['LastEvaluatedKey']
         )
         results += response.get(u'Items')
@@ -86,7 +91,8 @@ def query_dynamo(table=None, location=None):
 
 
 def main_run():
-    pdata, ddata = get_data(locations=locations)
+    # pdata, ddata = get_data(locations=locations)
+    ddata = get_data(locations=locations)
     """
     dbitem['pkey'] = str(uuid.uuid4()) - no longer needed.
     dbitem['temperature'] = int(tempF)
@@ -94,7 +100,7 @@ def main_run():
     dbitem['voltage'] = int(voltage)
     dbitem['humidity'] = int(humidity)
     dbitem['no_actuate'] = no_actuate
-    dbitem['time_utc_iso8601'] = str(datetime.datetime.utcnow().isoformat())
+    dbitem['time'] = int(datetime.datetime.utcnow())
     """
 
     df1 = pd.DataFrame(

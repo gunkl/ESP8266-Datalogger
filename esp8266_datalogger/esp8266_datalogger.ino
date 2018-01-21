@@ -14,19 +14,17 @@
 
 */
 
-/* Displays temp, humidity, and voltage on the OLED SSD1306 display.
-   Posts the graph data to an AWS DynamoDB table in your timezone corrected time, as ISO8601 time.
+/* 
+   Posts the graph data to an AWS DynamoDB table using UTC epoch timestamp.
 */
 
 /*
    Using library EasyNTPClient at version 1.1.0
    Using library Time at version 1.5
-   Using library Timezone
    Using library aws-sdk-arduino-esp8266 at version 0.9.1-beta
    Using library ESP8266WiFi at version 1.0
    Using library DHT at version
    Using library Wire at version
-   Using library esp8266-oled-ssd1306
    Using library Adafruit_Sensor-master
    Using library arduino-menusystem 
    ESP8266 Hardware library 2.4.0
@@ -34,14 +32,12 @@
 #include <FS.h> // spiffs filesystem
 #include <EasyNTPClient.h> // https://github.com/aharshac/EasyNTPClient
 #include <TimeLib.h>        //http://www.arduino.cc/playground/Code/Time
-#include <Timezone.h>    //https://github.com/JChristensen/Timezone
 #include <AmazonDynamoDBClient.h>
 #include <ESP8266AWSImplementations.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <DHT.h>
 #include <Wire.h>
-#include <SSD1306.h>
 // #include <Adafruit_Sensor.h> // for bmp180
 // #include <Adafruit_BMP085_U.h> // for bmp180
 #include <MenuSystem.h>  // https://github.com/jonblack/arduino-menusystem
@@ -64,52 +60,35 @@ PutItemInput putItemInput;
 /* Contants describing DynamoDB table and values being used. */
 char AWS_REGION[32] = "us-west-1";
 char AWS_ENDPOINT[32] = "amazonaws.com";
-char TABLE_NAME[32] = "sensors_v2"; // table should have "location" as the partition key, and "time_utc_iso8601" as the sort key.
+char TABLE_NAME[32] = "sensors_v3"; // table should have "location" as the partition key, and "time_utc_iso8601" as the sort key.
+char LOCATION[16] = "huzzah-01"; // location setting
 
 #define DHTTYPE DHT11
 #define DHT11_PIN 14
 #define dht_power 13 // Power DHT11 on pin 6, or separate power pin.
 #define SDA 4
 #define SCL 5
-#define SSD1306_ADDRESS 0x3C
 #define ONBOARDLED 0 // on board LED pin blink at startup
 const unsigned int update_delay = 2000; // update every 2 seconds, this loop goes on until we get the time and deep sleep.
 unsigned int deepsleep_time = (10*60*1000000); // 1000000 is 1 second, how long to deep sleep
 
 // init DHT sensor - http://randomnerdtutorials.com/esp8266-dht11dht22-temperature-and-humidity-web-server-with-arduino-ide/
 DHT dht(DHT11_PIN, DHTTYPE);
-// init display - https://github.com/squix78/esp8266-oled-ssd1306
-SSD1306 display(SSD1306_ADDRESS, SDA, SCL);
 
 // ntp stuff
 String currenttime = "";
 String iso8601date = "";
 String iso8601time = "";
 bool timeisset = false;
-//US Eastern Time Zone (New York, Detroit)
-TimeChangeRule myDST = {"PDT", Second, Sun, Mar, 2, -420};    //Daylight time = UTC - 4 hours
-TimeChangeRule mySTD = {"PST", First, Sun, Nov, 2, -480};     //Standard time = UTC - 5 hours
-Timezone myTZ(myDST, mySTD);
-TimeChangeRule *tcr;        //pointer to the time change rule, use to get TZ abbrev
 time_t utc, local;
-int8_t timeZone = 0;
+time_t bad_time = 2085978496;
 unsigned int ttl_expire_seconds = (60*86400); // 86400 is minutes in 60 days, * 60 = seconds for ttl expiry of data
 
 //
 
 // temp display and scaling stuff
 int senseTempVals;
-int scaleTempMinDefault = 50;
-int scaleTempMin = 50;
-int scaleTempMaxDefault = 80;
-int scaleTempMax = 80;
-int scaleTempVar = 20; // add/sub 10 degrees (20 total) to min/max for scale.
 int senseHumidVals;
-int scaleHumidMinDefault = 25;
-int scaleHumidMin = 25;
-int scaleHumidMax = 60;
-int scaleHumidMaxDefault = 60;
-int scaleHumidVar = 20;
 bool first = true;
 int adcval = 0;
 int senseAltitudeVals;
@@ -186,7 +165,7 @@ void adcget() {
   if (adcread < 0){
     adcread = 0;
   }
-  adcval = int((adcread/float(200))*100); // my huzzah with a divider using 560k and 100k resistors shows ~700 to be 100%
+  adcval = int((adcread/float(150))*100); // my huzzah with a divider using 560k and 100k resistors shows ~700 to be 100% so 700-550 = 150
   if (adcval > 100){
       adcval = 100;
   }
@@ -214,11 +193,6 @@ boolean fileWrite(String name, String filemode, String content){
     Serial.println(errorMessage);
     return false;
   } else{
-    //To all you old school C++ programmers this probably makes perfect sense, but to the rest of us mere mortals, here is what is going on:
-    //The file.write() method has two arguments, buffer and length. Since this example is writing a text string, we need to cast the
-    //text string (it's named "content") into a uint8_t pointer. If pointers confuse you, you're not alone! 
-    //I don't want to go into detail about pointers here, I'll do another example with casting and pointers, for now, this is the syntax
-    //to write a String into a text file.
     file.write((uint8_t *)content.c_str(), content.length());
     file.close();
     return true;
@@ -246,14 +220,22 @@ void fileRead(String name){
         // Serial.println("password: " + String(password1));
         file.readStringUntil('\n').toCharArray(AWS_REGION, 32);
         Serial.println("AWS_REGION: " + String(AWS_REGION));
+        //
         file.readStringUntil('\n').toCharArray(AWS_ENDPOINT, 32);
         Serial.println("AWS_ENDPOINT: " + String(AWS_ENDPOINT));
+        //
         file.readStringUntil('\n').toCharArray(TABLE_NAME, 32);
         Serial.println("TABLE_NAME: " + String(TABLE_NAME));
+        //
+        file.readStringUntil('\n').toCharArray(LOCATION, 16);
+        Serial.println("LOCATION: " + String(LOCATION));
+        //
         file.readStringUntil('\n').toCharArray(awsKeyID, 24);
         // Serial.println("awsKeyID: " + String(awsKeyID));
+        //
         file.readStringUntil('\n').toCharArray(awsSecKey, 48);
         // Serial.println("awsSecKey: " + String(awsSecKey));
+        //
         file.readStringUntil('\n').toCharArray(new_deepsleep, 4);
         int new_deepsleep_i;
         sscanf(new_deepsleep, "%d", &new_deepsleep_i);
@@ -369,6 +351,10 @@ void on_mainconfig(MenuComponent* p_menu_component) {
     String new_AWS_ENDPOINT = menuinput(minput, String(AWS_ENDPOINT), 32);
     Serial.println("Enter DynamoDB table name: [" + String(TABLE_NAME) + "] ");
     String new_TABLE_NAME = menuinput(minput, String(TABLE_NAME), 32);
+    //
+    Serial.println("Enter sensor location, this is also used as hostname: [" + String(LOCATION) + "] ");
+    String new_LOCATION = menuinput(minput, String(LOCATION), 16);
+    //
     Serial.println("Enter DynamoDB awsKeyID: [" + String(awsKeyID) + "] ");
     String new_awsKeyID = menuinput(minput, String(awsKeyID), 24);
     Serial.println("Enter DynamoDB awsSecKey: [" + String(awsSecKey) + "] ");
@@ -379,7 +365,7 @@ void on_mainconfig(MenuComponent* p_menu_component) {
     //
     Serial.println("Writing config...");
     fileWrite("/datalogger.conf", "w", newssid1 + "\n" + newpassword1 + "\n");
-    fileWrite("/datalogger.conf", "a", new_AWS_REGION + "\n" + new_AWS_ENDPOINT + "\n" + new_TABLE_NAME + "\n" + new_awsKeyID + "\n" + new_awsSecKey + "\n");
+    fileWrite("/datalogger.conf", "a", new_AWS_REGION + "\n" + new_AWS_ENDPOINT + "\n" + new_TABLE_NAME + "\n" + new_LOCATION + "\n" + new_awsKeyID + "\n" + new_awsSecKey + "\n");
     fileWrite("/datalogger.conf", "a", new_deepsleep + "\n");
     config_reset();
 }
@@ -390,9 +376,26 @@ void config_reset(){
     ESP.restart();
 }
 
+// make the reset info reason code work
+extern "C" {
+#include <user_interface.h> // https://github.com/esp8266/Arduino actually tools/sdk/include
+}
+//
+
+void checkResetReason() {
+    rst_info *myResetInfo;
+    delay(5000); // slow down so we really can see the reason!!
+    myResetInfo = ESP.getResetInfoPtr();
+    Serial.printf("myResetInfo->reason %x \n", myResetInfo->reason); // reason is uint32
+    Serial.flush();
+}
+
 void setup() {
   // serial setup mode
   Serial.begin(9600);
+  //
+  checkResetReason();
+  //
   startfs(); // start up SPIFFS.
   bool ismenumode = getmenumode();
   if (ismenumode) {
@@ -402,16 +405,10 @@ void setup() {
       serial_handler();
     }
   }
-  //Serial.println(String("ResetInfo.reason = ") + rsti->reason);
   //
   static WiFiEventHandler e1, e2;
   e1 = WiFi.onStationModeGotIP(onSTAGotIP);// As soon WiFi is connected, start NTP Client
   e2 = WiFi.onStationModeDisconnected(onSTADisconnected);
-  //
-  // as soon as i add the udp module, this rsti stuff vomits and dont work. no compily.
-  // otherwise it's nice to know why we woke up from deep sleep.
-  //rst_info *rsti;
-  //rsti = ESP.getResetInfoPtr();
   //
   pinMode(dht_power, OUTPUT);
   //
@@ -419,13 +416,6 @@ void setup() {
   Wire.begin();
   // bmp.begin();
   dht.begin();
-  //
-  // SSD OLED 1306 setup
-  display.init();
-  display.flipScreenVertically();
-  display.clear();   // clears the screen and buffer
-  display.setFont(ArialMT_Plain_16);
-  //
   //
   // Connecting to WiFi network
   Serial.println();
@@ -437,7 +427,7 @@ void setup() {
   WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_STA);
   WiFi.setOutputPower(0);
-  WiFi.hostname("huzzah-01"); // setting the hostname fixed most of my DHCP assignment issues with my netgear router.
+  WiFi.hostname(String(LOCATION)); // setting the hostname fixed most of my DHCP assignment issues with my netgear router.
   WiFi.begin(ssid1, password1);
   // IPAddress ip(172, 16, 0, 23); // use DHCP by MAC anyway, also this does seem to break hostname lookups.
   // IPAddress gateway(172, 16, 0, 1);
@@ -458,7 +448,7 @@ void setup() {
       WiFi.mode(WIFI_OFF);
       WiFi.mode(WIFI_STA);
       WiFi.setOutputPower(0);
-      WiFi.hostname("huzzah-01");
+      WiFi.hostname(String(LOCATION));
       WiFi.begin(ssid1, password1);
       delay(250);
     }
@@ -484,10 +474,8 @@ void loop()
   }
   //
   utc = ntpClient.getUnixTime();
-  local = myTZ.toLocal(utc, &tcr);
-  tz8601time(local, tcr -> abbrev);
-  Serial.println("Current time: " + iso8601date + iso8601time + " UTC:" + String(utc));
-  if ((!iso8601date.startsWith("1970")) && (int(utc) != 0)) {
+  Serial.println("Current time UTC:" + String(utc));
+  if ((utc != bad_time) && (int(utc) != 0)) {
     Serial.println("Time is set");
     timeisset = true;
   }
@@ -542,13 +530,10 @@ void loop()
       adcget();
       Serial.println("ADC%: " + String(adcval));
       Serial.println("ADC: " + String(analogRead(A0)));
-      // printtext((String(senseTempVals) + (char)247 + "F" + " - " + iso8601time.substring(0, 8)), String(senseHumidVals) + "% Humid", "Batt: " + String(adcval) + "%", String(sensePressure) + " " + String(senseAltitudeVals));
-      printtext((String(senseTempVals) + (char)247 + "F" + " - " + iso8601time.substring(0, 8)), String(senseHumidVals) + "% Humid", "Batt: " + String(adcval) + "%", "");
       delay(1); // reset watchdog timer
       putItem();
       Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
       delay(250);
-      display.displayOff();
       ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
     }
   }
@@ -559,13 +544,14 @@ void putItem() {
   char numberBuffer[12];
   char stringBuffer[28];
 
-  AttributeValue dTime;
-  sprintf(stringBuffer, "%s", (iso8601date + iso8601time).c_str());
-  dTime.setS(stringBuffer);
-  MinimalKeyValuePair < MinimalString, AttributeValue > att6("time_utc_iso8601", dTime);
+  AttributeValue dADC;
+  sprintf(numberBuffer, "%d", adcval);
+  dADC.setN(numberBuffer);
+  MinimalKeyValuePair < MinimalString, AttributeValue > att1("voltage", dADC);
 
   AttributeValue dLocation;
-  dLocation.setS("huzzah-01");
+  sprintf(numberBuffer, "%s", (String(sensePressure)).c_str());
+  dLocation.setS(LOCATION);
   MinimalKeyValuePair < MinimalString, AttributeValue > att2("location", dLocation);
 
   AttributeValue dType;
@@ -582,10 +568,10 @@ void putItem() {
   dTemp.setN(numberBuffer);
   MinimalKeyValuePair < MinimalString, AttributeValue > att5("temperature", dTemp);
 
-  AttributeValue dADC;
-  sprintf(numberBuffer, "%d", adcval);
-  dADC.setN(numberBuffer);
-  MinimalKeyValuePair < MinimalString, AttributeValue > att1("voltage", dADC);
+  AttributeValue dEpoch; // send ttl field as utc epoch time to enable auto data expiry on dynamodb TTL settings
+  sprintf(numberBuffer, "%d", int(int(utc)));
+  dEpoch.setN(numberBuffer);
+  MinimalKeyValuePair < MinimalString, AttributeValue > att6("epochtime", dEpoch);
 
   AttributeValue dTtl; // send ttl field as utc epoch time to enable auto data expiry on dynamodb TTL settings
   sprintf(numberBuffer, "%d", int(int(utc) + ttl_expire_seconds));
@@ -630,142 +616,6 @@ void putItem() {
       Serial.println("ERROR: Connection problem");
       break;
   }
-}
-
-/* - this code draws a line graph on the display, but since we're sleeping, i dont really want to use it.
- void drawgraph(uint16_t startx, uint16_t starty, uint16_t heighty, uint16_t scalemin, uint16_t scalemax, int dispVals[SENSE_ARRAY_SIZE]) {
-  // take diff between scalemax and scalemin and divide by total pixels available per unit in heighty
-  int perPixel = int((scalemax - scalemin) / heighty);
-  int yHeight = 0;
-  for (uint16_t i = 0; i < SENSE_ARRAY_SIZE; i++) {
-    // Serial.println(String(i) + "Sense: " + String(dispVals[i]));
-    if (int(dispVals[i] - scalemin) <= 0)
-    {
-      yHeight = 0;
-    }
-    else if (dispVals[i] > scalemax)
-    {
-      yHeight = heighty;
-    }
-    else
-    {
-      yHeight = int((dispVals[i] - scalemin) / perPixel);
-      if (yHeight > heighty) {
-        yHeight = heighty;
-      }
-    }
-    // Serial.println("Height " + String(yHeight) + " StartY: " + String(starty) + " EndY: " + String (starty - yHeight));
-    // drawing a line as below produces a "bar" ugly chart.
-    display.setPixel(i, starty - yHeight);
-  }
-}
-*/ 
-/* no longer rotating values
-void rotatevals() {
-  for (uint8_t i = 0; i < SENSE_ARRAY_SIZE - 1; i++) {
-    senseTempVals[i] = senseTempVals[i + 1];
-    senseHumidVals[i] = senseHumidVals[i + 1];
-  }
-}
-*/
-
-void printtext(String line1, String line2, String line3, String line4) {
-  display.clear();
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.drawString(0, 0, line1);
-  display.drawString(0, 16, line2);
-  display.drawString(0, 32, line3);
-  display.drawString(0, 48, line4);
-  // removing drawgraphs to save power, since this isn't constantly running code.
-  // drawgraph(0, 31, 14, scaleTempMin, scaleTempMax, senseTempVals);
-  // drawgraph(0, 63, 14, scaleHumidMin, scaleHumidMax, senseHumidVals);
-  display.display();
-}
-
-/* This is part of the line graph code, which we aren't using.
-void rescale() {
-  int maxfoundT = scaleTempMaxDefault;
-  int minfoundT = scaleTempMinDefault;
-  int maxfoundH = scaleHumidMaxDefault;
-  int minfoundH = scaleHumidMinDefault;
-  for (uint16_t i = 0; i < SENSE_ARRAY_SIZE; i++) {
-    if (!(int(senseTempVals[i]) == 0) && !(int(senseHumidVals[i]) == 0)) {
-      // Serial.println(String(i) + String(minfoundH) + " " + String(minfoundT));
-      if (int(senseTempVals[i]) > int(maxfoundT)) {
-        maxfoundT = senseTempVals[i];
-      }
-      if (int(senseTempVals[i]) <= int(minfoundT)) {
-        minfoundT = senseTempVals[i];
-      }
-      if (int(senseHumidVals[i]) > int(maxfoundH)) {
-        maxfoundH = senseHumidVals[i];
-      }
-      if (int(senseHumidVals[i]) <= int(minfoundH)) {
-        minfoundH = senseHumidVals[i];
-      }
-    }
-  }
-  // Serial.println(String(maxfoundT) + " " + String(minfoundT));
-  //Serial.println(String(maxfoundH) + " " + String(minfoundH));
-  //
-  // humidity minmax
-  scaleHumidMin = int(minfoundH - scaleHumidVar / 4);
-  scaleHumidMax = int(maxfoundH + scaleHumidVar / 4);
-  // temp minmax
-  scaleTempMin = int(minfoundT - scaleTempVar / 4);
-  scaleTempMax = int(maxfoundT + scaleTempVar / 4);
-  //
-  if (scaleTempMin < 0) {
-    scaleTempMin = 0;
-  }
-  if (scaleHumidMin < 0) {
-    scaleHumidMin = 0;
-  }
-  Serial.println("HMi:" + String(scaleHumidMin) + " HMx:" + String(scaleHumidMax) + "  TMi:" + String(scaleTempMin) + " TMx:" + String(scaleTempMax));
-}
-*/
-
-void tz8601time(time_t t, char *tz) {
-  iso8601date = String(year(t)) + "-" + zeropad(month(t)) + "-" + zeropad(day(t)) + "T";
-  // iso8601time = zeropad(hour(t)) + ":" + zeropad(minute(t)) + ":" + zeropad(second(t)) + ".000000";
-  iso8601time = zeropad(hour(t)) + ":" + zeropad(minute(t)) + ":" + zeropad(second(t));
-}
-
-//Function to print time with time zone
-void printTime(time_t t, char *tz)
-{
-  sPrintI00(hour(t));
-  sPrintDigits(minute(t));
-  sPrintDigits(second(t));
-  Serial.print(' ');
-  Serial.print(dayShortStr(weekday(t)));
-  Serial.print(' ');
-  sPrintI00(day(t));
-  Serial.print(' ');
-  Serial.print(monthShortStr(month(t)));
-  Serial.print(' ');
-  Serial.print(year(t));
-  Serial.print(' ');
-  Serial.print(tz);
-  Serial.println();
-}
-
-//Print an integer in "00" format (with leading zero).
-//Input value assumed to be between 0 and 99.
-void sPrintI00(int val)
-{
-  if (val < 10) Serial.print('0');
-  Serial.print(val, DEC);
-  return;
-}
-
-//Print an integer in ":00" format (with leading zero).
-//Input value assumed to be between 0 and 99.
-void sPrintDigits(int val)
-{
-  Serial.print(':');
-  if (val < 10) Serial.print('0');
-  Serial.print(val, DEC);
 }
 
 String zeropad(int val)

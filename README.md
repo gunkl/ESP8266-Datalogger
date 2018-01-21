@@ -16,24 +16,14 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
  * Make sure the DB configuration and locations match the ESP settings.
             
 **esp8266_datalogger.ino** - Arduino project for the ESP12e-ESP8266 Feather Huzzah board.
- * Hardware: Adafruit Feather Huzzah, LiPo battery, SSD1306 I2C OLED Display, DHT11 sensor
+ * Hardware: Adafruit Feather Huzzah, LiPo battery, DHT11 sensor
  * This makes use of the AWS SDK, and you need to create keys.h and keys.cpp within the source of the project
             containing your credentials (awsKeyID, awsSecKey) in Arduino/libraries/aws-sdk-arduino-esp8266/src/keys.*
- * Similarly, wificonfig.h and .cpp contain "ssid1" and "password1" for WiFi access. I placed these files in
-            libraries/wificonfig/
  * Make sure the location, DB table name, and settings here for putting data into the DB matches what you 
             have in piplot to pull the data.
  * You may need to change the scaling in adcget() - I have it scaled for the resistor divider I used.
- * You may want to update the timezone settings as well.
             
-# GOTCHAS - I ran into so many of these during this project.
- * NTP - I tried using a "polling interval" style NTP library.  It would take forever to get the first sync.
-    * Also, the clock on the ESP is actually quite good at keeping time when not sleeping, so this would
-      have been overkill. For the purposes of deep sleep and wakeup, I switched to an instant NTP grab.
-      Unfortunately, it appears some clocks in the pool are wrong (no way) - and I've seen dates for 2036.
-                  
- * WiFiUDP - As soon as I added this library, the code wouldn't compile when trying to include rst_reason to
-                  read why the system was reset. (Usually deep sleep)
+# GOTCHAS
             
  * Libraries - In most cases you will need to grab the libraries and versions I've put in the code itself.
     * A lot of these are pulls from Git. Sorry to report, I don't remember which, but some of them have
@@ -53,15 +43,8 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
 # TODO
 **piplot.py** - Some code cleanup
  * Make it easier to add new data, ie, cleanup how dataframes are generated.
- * Instead of using Timezone corrected data, use UTC, and fix the timezones in the graph rendering.
                 
 **esp8266_datalogger.ino** - Some code cleanup :-)
- * Instead of using Timezone corrected data, use UTC, and fix the timezones in the graph rendering.
- * There's some leftover code from when I was just displaying the data on the display,
-     including creating a line graph, which required an array of data. This can be updated and removed
-     for the current usage.
- * If WiFiUDP gets fixed, or figure out how to fix it, so that I can read the wakeup/reset reason (rst_reason).
- * As soon as I added WiFiUDP, this code stopped compiling.
  * NTP might not actually be required at all - the AWS library gets the time and date (see x-amz-date in
     serial output) - if I bothered to figure out how to use it.
             

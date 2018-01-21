@@ -475,7 +475,7 @@ void loop()
   //
   utc = ntpClient.getUnixTime();
   Serial.println("Current time UTC:" + String(utc));
-  if ((utc != bad_time) && (int(utc) != 0)) {
+  if ((utc > (bad_time + 1000)) && (int(utc) != 0) && (utc < (bad_time - 1000))) {
     Serial.println("Time is set");
     timeisset = true;
   }

@@ -60,7 +60,7 @@ PutItemInput putItemInput;
 /* Contants describing DynamoDB table and values being used. */
 char AWS_REGION[32] = "us-west-1";
 char AWS_ENDPOINT[32] = "amazonaws.com";
-char TABLE_NAME[32] = "sensors_v3"; // table should have "location" as the partition key, and "time_utc_iso8601" as the sort key.
+char TABLE_NAME[32] = "sensors_v3"; // table should have "location" as the partition key, and "epochtime" as the sort key.
 char LOCATION[16] = "huzzah-01"; // location setting
 
 #define DHTTYPE DHT11
@@ -79,8 +79,7 @@ DHT dht(DHT11_PIN, DHTTYPE);
 String currenttime = "";
 String iso8601date = "";
 String iso8601time = "";
-bool timeisset = false;
-time_t utc, local;
+time_t utc = 0;
 time_t bad_time = 2085978496;
 unsigned int ttl_expire_seconds = (60*86400); // 86400 is minutes in 60 days, * 60 = seconds for ttl expiry of data
 
@@ -131,17 +130,7 @@ Menu mu1("(Menu)");
 //
 // end menu config
 //
-/*
-  enum rst_reason {
-  REASON_DEFAULT_RST = 0,  normal startup by power on
-  REASON_WDT_RST = 1,  hardware watch dog reset
-  REASON_EXCEPTION_RST = 2,  exception reset, GPIO status won't change
-  REASON_SOFT_WDT_RST   = 3,  software watch dog reset, GPIO status won't change
-  REASON_SOFT_RESTART = 4,  software restart ,system_restart , GPIO status won't change
-  REASON_DEEP_SLEEP_AWAKE = 5,  wake up from deep-sleep
-  REASON_EXT_SYS_RST      = 6  external system reset
-  };
-*/
+
 
 // Manage network connection
 void onSTAGotIP(WiFiEventStationModeGotIP ipInfo) {
@@ -228,7 +217,7 @@ void fileRead(String name){
         Serial.println("TABLE_NAME: " + String(TABLE_NAME));
         //
         file.readStringUntil('\n').toCharArray(LOCATION, 16);
-        Serial.println("LOCATION: " + String(LOCATION));
+        Serial.println("LOCATION/hostname: " + String(LOCATION));
         //
         file.readStringUntil('\n').toCharArray(awsKeyID, 24);
         // Serial.println("awsKeyID: " + String(awsKeyID));
@@ -381,23 +370,37 @@ extern "C" {
 #include <user_interface.h> // https://github.com/esp8266/Arduino actually tools/sdk/include
 }
 //
-
-void checkResetReason() {
+/*
+  enum rst_reason {
+  REASON_DEFAULT_RST = 0,  normal startup by power on
+  REASON_WDT_RST = 1,  hardware watch dog reset
+  REASON_EXCEPTION_RST = 2,  exception reset, GPIO status won't change
+  REASON_SOFT_WDT_RST   = 3,  software watch dog reset, GPIO status won't change
+  REASON_SOFT_RESTART = 4,  software restart ,system_restart , GPIO status won't change
+  REASON_DEEP_SLEEP_AWAKE = 5,  wake up from deep-sleep
+  REASON_EXT_SYS_RST      = 6  external system reset
+  };
+*/
+int checkResetReason() {
     rst_info *myResetInfo;
     delay(5000); // slow down so we really can see the reason!!
     myResetInfo = ESP.getResetInfoPtr();
     Serial.printf("myResetInfo->reason %x \n", myResetInfo->reason); // reason is uint32
     Serial.flush();
+    return int(myResetInfo->reason);
 }
 
 void setup() {
   // serial setup mode
   Serial.begin(9600);
   //
-  checkResetReason();
+  int reset_reason = checkResetReason();
+  bool ismenumode = false;
   //
   startfs(); // start up SPIFFS.
-  bool ismenumode = getmenumode();
+  if (reset_reason == 0 || reset_reason == 6 ){
+    ismenumode = getmenumode();
+  }
   if (ismenumode) {
     displaymenu();
     serialFlush();
@@ -471,19 +474,23 @@ void loop()
   float floatbuf;
   if (first) {
     first = false;
-    timeisset = false;
   }
   //
-  utc = ntpClient.getUnixTime();
-  Serial.println("Current time UTC:" + String(utc));
-  // if ((utc > (bad_time + 1000)) && (int(utc) != 0) && (utc < (bad_time - 1000))) {
-  if ((utc > (bad_time + 1000) || (utc < (bad_time - 1000))) && (int(utc) != 0)) {
-    Serial.println("Time is set");
-    timeisset = true;
+  int maxtries = 10; // how many times to try to get ntp time before giving up and napping.
+  while ((((bad_time - 1000) < utc && utc < (bad_time + 1000)) || (int(utc) == 0)) && maxtries > 0) {
+      maxtries = maxtries - 1;
+      Serial.println(String(maxtries) + ") Time is not set - UTC: " + String(utc));
+      utc = ntpClient.getUnixTime();
+      delay(250);
+  }
+  if (maxtries > 0) {
+      Serial.println("Current time UTC: " + String(utc));
   }
   else {
     Serial.println("Time is not set");
-    timeisset = false;
+    Serial.println("Giving up and sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
+    delay(250);
+    ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
   }
   //
   bool reading = false;
@@ -527,7 +534,6 @@ void loop()
  
 
   if (reading) {
-    if (timeisset) {
       //
       adcget();
       Serial.println("ADC%: " + String(adcval));
@@ -537,7 +543,6 @@ void loop()
       Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
       delay(250);
       ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
-    }
   }
   delay(update_delay);
 }

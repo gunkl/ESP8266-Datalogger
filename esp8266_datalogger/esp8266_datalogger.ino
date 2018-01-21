@@ -29,6 +29,7 @@
    Using library esp8266-oled-ssd1306
    Using library Adafruit_Sensor-master
    Using library arduino-menusystem 
+   ESP8266 Hardware library 2.4.0
 */
 #include <FS.h> // spiffs filesystem
 #include <EasyNTPClient.h> // https://github.com/aharshac/EasyNTPClient
@@ -180,7 +181,12 @@ void adcget() {
   // There’s only one analog input pin, labeled ADC. To read the ADC pin, make a function call to analogRead(A0). 
   // Remember that this pin has a weird maximum voltage of 1V – you’ll get a 10-bit value (0-1023) proportional to a voltage between 0 and 1V.
   // adcval = int((analogRead(A0)/float(1024))*100); // assuming a full range of the 1024 int value the adc produces
-  adcval = int((analogRead(A0)/float(700))*100); // my huzzah with a divider using 560k and 100k resistors shows ~700 to be 100%
+  // if 4.2v is max at 700 ADC reading, thats 4.2/700=.006V per adc tick, so 3.0/.006 = 500 making the range 500-700 of the batt (3.0V-4.2V)
+  float adcread = (analogRead(A0)-550);
+  if (adcread < 0){
+    adcread = 0;
+  }
+  adcval = int((adcread/float(200))*100); // my huzzah with a divider using 560k and 100k resistors shows ~700 to be 100%
   if (adcval > 100){
       adcval = 100;
   }
@@ -245,9 +251,9 @@ void fileRead(String name){
         file.readStringUntil('\n').toCharArray(TABLE_NAME, 32);
         Serial.println("TABLE_NAME: " + String(TABLE_NAME));
         file.readStringUntil('\n').toCharArray(awsKeyID, 24);
-        Serial.println("awsKeyID: " + String(awsKeyID));
+        // Serial.println("awsKeyID: " + String(awsKeyID));
         file.readStringUntil('\n').toCharArray(awsSecKey, 48);
-        Serial.println("awsSecKey: " + String(awsSecKey));
+        // Serial.println("awsSecKey: " + String(awsSecKey));
         file.readStringUntil('\n').toCharArray(new_deepsleep, 4);
         int new_deepsleep_i;
         sscanf(new_deepsleep, "%d", &new_deepsleep_i);
@@ -481,7 +487,7 @@ void loop()
   local = myTZ.toLocal(utc, &tcr);
   tz8601time(local, tcr -> abbrev);
   Serial.println("Current time: " + iso8601date + iso8601time + " UTC:" + String(utc));
-  if (!iso8601date.startsWith("1970")) {
+  if ((!iso8601date.startsWith("1970")) && (int(utc) != 0)) {
     Serial.println("Time is set");
     timeisset = true;
   }
@@ -502,7 +508,6 @@ void loop()
     // bmp.getEvent(&event);
     // bmp.getTemperature(&floatbuf);
     // bmp.getHumidity;
-    ESP.wdtFeed(); // reset watchdog timer
     // senseTempVals = int(floatbuf*9/5+32);
     senseTempVals = int(dht.readTemperature(true));
     senseHumidVals = int(dht.readHumidity());
@@ -539,7 +544,7 @@ void loop()
       Serial.println("ADC: " + String(analogRead(A0)));
       // printtext((String(senseTempVals) + (char)247 + "F" + " - " + iso8601time.substring(0, 8)), String(senseHumidVals) + "% Humid", "Batt: " + String(adcval) + "%", String(sensePressure) + " " + String(senseAltitudeVals));
       printtext((String(senseTempVals) + (char)247 + "F" + " - " + iso8601time.substring(0, 8)), String(senseHumidVals) + "% Humid", "Batt: " + String(adcval) + "%", "");
-      ESP.wdtFeed(); // reset watchdog timer
+      delay(1); // reset watchdog timer
       putItem();
       Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
       delay(250);

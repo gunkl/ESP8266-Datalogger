@@ -90,6 +90,8 @@ int senseTempVals;
 int senseHumidVals;
 bool first = true;
 int adcval = 0;
+int batt_full_adc = 525;
+int batt_empty_adc = 450;
 int senseAltitudeVals;
 // float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
 int sensePressure;
@@ -150,11 +152,14 @@ void adcget() {
   // Remember that this pin has a weird maximum voltage of 1V – you’ll get a 10-bit value (0-1023) proportional to a voltage between 0 and 1V.
   // adcval = int((analogRead(A0)/float(1024))*100); // assuming a full range of the 1024 int value the adc produces
   // if 4.2v is max at 700 ADC reading, thats 4.2/700=.006V per adc tick, so 3.0/.006 = 500 making the range 500-700 of the batt (3.0V-4.2V)
-  float adcread = (analogRead(A0)-550);
+  // 3.4-3.5 is probably lowest usable voltage.
+  // with a 100k and 560k divider use low val of 550 (high is 700) so range is 150.
+  // with 100k and 680k, use low val of 450 and high of 525 so range is 75. (3.5v-4.2v range, 450-538)
+  float adcread = (analogRead(A0)-batt_empty_adc);
   if (adcread < 0){
     adcread = 0;
   }
-  adcval = int((adcread/float(150))*100); // my huzzah with a divider using 560k and 100k resistors shows ~700 to be 100% so 700-550 = 150
+  adcval = int((adcread/float(batt_full_adc - batt_empty_adc))*100); 
   if (adcval > 100){
       adcval = 100;
   }
@@ -190,7 +195,7 @@ boolean fileWrite(String name, String filemode, String content){
 
 
 void fileRead(String name){
-  char new_deepsleep[4];
+  char new_int[5];
   //read file from SPIFFS and store it as a String variable
   String contents;
   File file = SPIFFS.open(name.c_str(), "r");
@@ -225,9 +230,17 @@ void fileRead(String name){
         file.readStringUntil('\n').toCharArray(awsSecKey, 48);
         // Serial.println("awsSecKey: " + String(awsSecKey));
         //
-        file.readStringUntil('\n').toCharArray(new_deepsleep, 4);
+        file.readStringUntil('\n').toCharArray(new_int, 5);
+        sscanf(new_int, "%d", &batt_full_adc);
+        Serial.println("ADC value when battery/voltage is full/max: " + String(batt_full_adc));
+        //
+        file.readStringUntil('\n').toCharArray(new_int, 5);
+        sscanf(new_int, "%d", &batt_empty_adc);
+        Serial.println("ADC value when battery/voltage is empty/min: " + String(batt_empty_adc));
+        //
+        file.readStringUntil('\n').toCharArray(new_int, 4);
         int new_deepsleep_i;
-        sscanf(new_deepsleep, "%d", &new_deepsleep_i);
+        sscanf(new_int, "%d", &new_deepsleep_i);
         Serial.println("Deep sleep (minutes): " + String(new_deepsleep_i));
         deepsleep_time = (new_deepsleep_i * 60 * 1000000);
         
@@ -348,6 +361,11 @@ void on_mainconfig(MenuComponent* p_menu_component) {
     String new_awsKeyID = menuinput(minput, String(awsKeyID), 24);
     Serial.println("Enter DynamoDB awsSecKey: [" + String(awsSecKey) + "] ");
     String new_awsSecKey = menuinput(minput, String(awsSecKey), 48);
+    //
+    Serial.println("ADC value when battery/voltage is full/max: [" + String(batt_full_adc) + "] ");
+    String new_batt_full_adc = menuinput(minput, String(batt_full_adc), 5);
+    Serial.println("ADC value when battery/voltage is empty/min: [" + String(batt_empty_adc) + "] ");
+    String new_batt_empty_adc = menuinput(minput, String(batt_empty_adc), 5);
     // (10*60*1000000) = 10 minutes
     Serial.println("Deep sleep time in minutes (max 360): [" + String(deepsleep_time/(60*1000000)) + "] ");
     String new_deepsleep = menuinput(minput, String(deepsleep_time/(60*1000000)), 4);
@@ -355,7 +373,7 @@ void on_mainconfig(MenuComponent* p_menu_component) {
     Serial.println("Writing config...");
     fileWrite("/datalogger.conf", "w", newssid1 + "\n" + newpassword1 + "\n");
     fileWrite("/datalogger.conf", "a", new_AWS_REGION + "\n" + new_AWS_ENDPOINT + "\n" + new_TABLE_NAME + "\n" + new_LOCATION + "\n" + new_awsKeyID + "\n" + new_awsSecKey + "\n");
-    fileWrite("/datalogger.conf", "a", new_deepsleep + "\n");
+    fileWrite("/datalogger.conf", "a", new_batt_full_adc + "\n" + new_batt_empty_adc + "\n" + new_deepsleep + "\n");
     config_reset();
 }
 

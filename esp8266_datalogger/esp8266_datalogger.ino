@@ -133,7 +133,7 @@ Menu mu1("(Menu)");
 // end menu config
 //
 
-
+/*
 // Manage network connection
 void onSTAGotIP(WiFiEventStationModeGotIP ipInfo) {
   Serial.printf("Got IP: %s\r\n", ipInfo.ip.toString().c_str());
@@ -144,8 +144,10 @@ void onSTAGotIP(WiFiEventStationModeGotIP ipInfo) {
 void onSTADisconnected(WiFiEventStationModeDisconnected event_info) {
   Serial.printf("Disconnected from SSID: %s\n", event_info.ssid.c_str());
   Serial.printf("Reason: %d\n", event_info.reason);
+  delay(2000);
   digitalWrite(ONBOARDLED, HIGH); // Turn off LED
 }
+*/
 
 void adcget() {
   // There’s only one analog input pin, labeled ADC. To read the ADC pin, make a function call to analogRead(A0). 
@@ -409,6 +411,9 @@ int checkResetReason() {
 }
 
 void setup() {
+  pinMode(dht_power, OUTPUT);
+  pinMode(ONBOARDLED, OUTPUT);
+  digitalWrite(ONBOARDLED, HIGH); // Turn off LED
   // serial setup mode
   Serial.begin(9600);
   //
@@ -427,11 +432,12 @@ void setup() {
     }
   }
   //
+  /*
   static WiFiEventHandler e1, e2;
   e1 = WiFi.onStationModeGotIP(onSTAGotIP);// As soon WiFi is connected, start NTP Client
   e2 = WiFi.onStationModeDisconnected(onSTADisconnected);
+  */
   //
-  pinMode(dht_power, OUTPUT);
   //
   //
   Wire.begin();
@@ -442,10 +448,9 @@ void setup() {
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid1);
-
-  WiFi.disconnect();
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_OFF);
+  // WiFi.disconnect();
+  // WiFi.persistent(false);
+  // WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_STA);
   WiFi.setOutputPower(0);
   WiFi.hostname(String(LOCATION)); // setting the hostname fixed most of my DHCP assignment issues with my netgear router.
@@ -461,6 +466,7 @@ void setup() {
     retries += 1;
     delay(1000);
     Serial.print(".");
+    /*
     if (retries >= 10) {
       retries = 0;
       Serial.println("Reset WiFi..");
@@ -472,10 +478,13 @@ void setup() {
       WiFi.hostname(String(LOCATION));
       WiFi.begin(ssid1, password1);
       delay(250);
+      
     }
+    */
   }
   Serial.println("");
   Serial.println("WiFi connected");
+  digitalWrite(ONBOARDLED, LOW); // Turn on LED
   ESP.wdtFeed(); // reset watchdog timer
   /* Initialize ddbClient. */
   ddbClient.setAWSRegion(AWS_REGION);
@@ -557,9 +566,12 @@ void loop()
       Serial.println("ADC%: " + String(adcval));
       Serial.println("ADC: " + String(analogRead(A0)));
       delay(1); // reset watchdog timer
+      digitalWrite(ONBOARDLED, HIGH); // Turn off LED
       putItem();
+      digitalWrite(ONBOARDLED, LOW); // Turn on LED
       Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
-      delay(250);
+      delay(500);
+      digitalWrite(ONBOARDLED, HIGH); // Turn off LED
       ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
   }
   delay(update_delay);

@@ -8,7 +8,7 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
    * Serial port configuration is possible for many settings at board startup.
 
 # LED Operation - blink decoder
- * 5 quick - waiting for WiFi
+ * 5 quick/constant fast blink - waiting for WiFi
  * 3 quick - waiting for NTP/time
  * 2 slow 1 fast (x2) - sensor read success
  * 2 slow 2 fast (x2) - sensor read failure

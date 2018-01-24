@@ -133,22 +133,6 @@ Menu mu1("(Menu)");
 // end menu config
 //
 
-/*
-// Manage network connection
-void onSTAGotIP(WiFiEventStationModeGotIP ipInfo) {
-  Serial.printf("Got IP: %s\r\n", ipInfo.ip.toString().c_str());
-  digitalWrite(ONBOARDLED, LOW); // Turn on LED
-}
-
-// Manage network disconnection
-void onSTADisconnected(WiFiEventStationModeDisconnected event_info) {
-  Serial.printf("Disconnected from SSID: %s\n", event_info.ssid.c_str());
-  Serial.printf("Reason: %d\n", event_info.reason);
-  delay(2000);
-  digitalWrite(ONBOARDLED, HIGH); // Turn off LED
-}
-*/
-
 void adcget() {
   // There’s only one analog input pin, labeled ADC. To read the ADC pin, make a function call to analogRead(A0). 
   // Remember that this pin has a weird maximum voltage of 1V – you’ll get a 10-bit value (0-1023) proportional to a voltage between 0 and 1V.
@@ -432,13 +416,6 @@ void setup() {
     }
   }
   //
-  /*
-  static WiFiEventHandler e1, e2;
-  e1 = WiFi.onStationModeGotIP(onSTAGotIP);// As soon WiFi is connected, start NTP Client
-  e2 = WiFi.onStationModeDisconnected(onSTADisconnected);
-  */
-  //
-  //
   //
   Wire.begin();
   // bmp.begin();
@@ -463,24 +440,11 @@ void setup() {
   delay(1000);
   int retries = 0;
   while (WiFi.status() != WL_CONNECTED) {
+    // wait for wifi to be connected
     retries += 1;
-    delay(1000);
+    flashled(5, 125, 125);
+    // delay(1000);
     Serial.print(".");
-    /*
-    if (retries >= 10) {
-      retries = 0;
-      Serial.println("Reset WiFi..");
-      WiFi.disconnect();
-      delay(250);
-      WiFi.mode(WIFI_OFF);
-      WiFi.mode(WIFI_STA);
-      WiFi.setOutputPower(0);
-      WiFi.hostname(String(LOCATION));
-      WiFi.begin(ssid1, password1);
-      delay(250);
-      
-    }
-    */
   }
   Serial.println("");
   Serial.println("WiFi connected");
@@ -508,7 +472,7 @@ void loop()
       maxtries = maxtries - 1;
       Serial.println(String(maxtries) + ") Time is not set - UTC: " + String(utc));
       utc = ntpClient.getUnixTime();
-      delay(250);
+      flashled(3, 125, 125);
   }
   if (maxtries > 0) {
       Serial.println("Current time UTC: " + String(utc));
@@ -521,7 +485,9 @@ void loop()
   }
   //
   bool reading = false;
-  while (!reading) {
+  maxtries = 10;
+  while (!reading && maxtries > 0) {
+    maxtries = maxtries - 1;
     digitalWrite(dht_power, LOW); // turn on the DHT sensor, wired to (-) pin. (+) wired to +power bus.
     delay(150);
     /* for dht
@@ -550,15 +516,23 @@ void loop()
     {
       reading = true;
       digitalWrite(dht_power, HIGH); // turn off DHT sensor
+      flashled(2, 500, 500);
+      flashled(1, 250, 250);
+      delay(1000);
+      flashled(2, 500, 500);
+      flashled(1, 250, 250);
     }
     else {
       Serial.println("Bad DHT reading.");
       digitalWrite(dht_power, HIGH); // turn off DHT sensor
+      flashled(2, 500, 500);
+      flashled(2, 250, 250);
+      delay(1000);
+      flashled(2, 500, 500);
+      flashled(2, 250, 250);
       delay(1000);
     }
   }
-
- 
 
   if (reading) {
       //
@@ -566,15 +540,35 @@ void loop()
       Serial.println("ADC%: " + String(adcval));
       Serial.println("ADC: " + String(analogRead(A0)));
       delay(1); // reset watchdog timer
-      digitalWrite(ONBOARDLED, HIGH); // Turn off LED
       putItem();
-      digitalWrite(ONBOARDLED, LOW); // Turn on LED
       Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
-      delay(500);
-      digitalWrite(ONBOARDLED, HIGH); // Turn off LED
-      ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
+      flashled(3, 500, 500);
+      flashled(1, 250, 250);
+      delay(1000);
+      flashled(3, 500, 500);
+      flashled(1, 250, 250);
+      // ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
   }
+  else {
+      Serial.println("Failed to get a sensor readng, giving up and sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
+      flashled(3, 500, 500);
+      flashled(2, 250, 250);
+      delay(1000);
+      flashled(3, 500, 500);
+      flashled(2, 250, 250);
+  }
+  ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
   delay(update_delay);
+}
+
+void flashled(int flashes, int timeon, int timeoff){
+  while (flashes > 0) {
+    digitalWrite(ONBOARDLED, LOW); // Turn on LED
+    delay(timeon);
+    digitalWrite(ONBOARDLED, HIGH); // Turn off LED
+    delay(timeoff);
+    flashes = flashes - 1;
+  }
 }
 
 void putItem() {

@@ -7,6 +7,14 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
    * You can enable dynamodb "TTL" to expire data. Default is to post a TTL of +60 days.
    * Serial port configuration is possible for many settings at board startup.
 
+# LED Operation - blink decoder
+ * 5 quick - waiting for WiFi
+ * 3 quick - waiting for NTP/time
+ * 2 slow 1 fast (x2) - sensor read success
+ * 2 slow 2 fast (x2) - sensor read failure
+ * 3 slow 1 fast (x2) - success posting to AWS
+ * 3 slow 2 fast (x2) - failure to post, giving up and going to sleep.
+
 # Files and Setup
 **piplot.py** - Grabs data from your dynamodb (using boto3) and uses bokeh to plot graphs of your sensor data. 
  * You need to know how to set up boto3 and aws credentials, as well as assign appropriate permissions

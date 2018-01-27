@@ -394,6 +394,13 @@ int checkResetReason() {
     return int(myResetInfo->reason);
 }
 
+void goDeepSleep(String displayMessage) {
+    Serial.println(displayMessage);
+    Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
+    delay(250);
+    ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
+}
+
 void setup() {
   pinMode(dht_power, OUTPUT);
   pinMode(ONBOARDLED, OUTPUT);
@@ -439,24 +446,30 @@ void setup() {
   // WiFi.config(ip, dns, gateway, subnet);
   delay(1000);
   int retries = 0;
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED && retries < 20) {
     // wait for wifi to be connected
     retries += 1;
     flashled(5, 125, 125);
     // delay(1000);
     Serial.print(".");
   }
-  Serial.println("");
-  Serial.println("WiFi connected");
-  digitalWrite(ONBOARDLED, LOW); // Turn on LED
-  ESP.wdtFeed(); // reset watchdog timer
-  /* Initialize ddbClient. */
-  ddbClient.setAWSRegion(AWS_REGION);
-  ddbClient.setAWSEndpoint(AWS_ENDPOINT);
-  ddbClient.setAWSSecretKey(awsSecKey);
-  ddbClient.setAWSKeyID(awsKeyID);
-  ddbClient.setHttpClient(&httpClient);
-  ddbClient.setDateTimeProvider(&dateTimeProvider);
+  if (WiFi.status() == WL_CONNECTED){
+    Serial.println("");
+    Serial.println("WiFi connected");
+    digitalWrite(ONBOARDLED, LOW); // Turn on LED
+    ESP.wdtFeed(); // reset watchdog timer
+    /* Initialize ddbClient. */
+    ddbClient.setAWSRegion(AWS_REGION);
+    ddbClient.setAWSEndpoint(AWS_ENDPOINT);
+    ddbClient.setAWSSecretKey(awsSecKey);
+    ddbClient.setAWSKeyID(awsKeyID);
+    ddbClient.setHttpClient(&httpClient);
+    ddbClient.setDateTimeProvider(&dateTimeProvider);    
+  }
+  else {
+    goDeepSleep("WiFi failed to connect, giving up and sleeping.");
+  }
+
 }
 
 
@@ -478,10 +491,7 @@ void loop()
       Serial.println("Current time UTC: " + String(utc));
   }
   else {
-    Serial.println("Time is not set");
-    Serial.println("Giving up and sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
-    delay(250);
-    ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
+    goDeepSleep("Failed to get NTP time, giving up and sleeping.");
   }
   //
   bool reading = false;
@@ -533,7 +543,7 @@ void loop()
       delay(1000);
     }
   }
-
+  String sleepReason = "Failed to post to AWS. Giving up.";
   if (reading) {
       //
       adcget();
@@ -541,23 +551,22 @@ void loop()
       Serial.println("ADC: " + String(analogRead(A0)));
       delay(1); // reset watchdog timer
       putItem();
-      Serial.println("Sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
       flashled(3, 500, 500);
       flashled(1, 250, 250);
       delay(1000);
       flashled(3, 500, 500);
       flashled(1, 250, 250);
-      // ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
+      sleepReason = "Success, got ADC reading and completed post to DB.";
   }
   else {
-      Serial.println("Failed to get a sensor readng, giving up and sleeping: " + String(deepsleep_time) + " Minutes: " + String(deepsleep_time/(60*1000000)));
+      sleepReason = "Failed to get a ADC readng, giving up.";
       flashled(3, 500, 500);
       flashled(2, 250, 250);
       delay(1000);
       flashled(3, 500, 500);
       flashled(2, 250, 250);
   }
-  ESP.deepSleep(deepsleep_time); // 1,000,000 = 1 second
+  goDeepSleep(sleepReason);
   delay(update_delay);
 }
 

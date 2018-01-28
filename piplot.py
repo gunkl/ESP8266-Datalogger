@@ -49,6 +49,8 @@ def get_data(locations=None):
         ddata[location] = {}
         ddata[location]['humidity'] = []
         ddata[location]['temperature'] = []
+        ddata[location]['pressure'] = []
+        ddata[location]['pressureHg'] = []
         ddata[location]['time'] = []
         ddata[location]['voltage'] = []
         rawdata = query_dynamo(table=table, location=location)
@@ -56,6 +58,8 @@ def get_data(locations=None):
             # pdata.append({'location':location, 'humidity':int(item.get('humidity')), 'temperature':int(item.get('temperature')), 'time':int(time.mktime((dateutil.parser.parse(item.get('epochtime'))).timetuple()))})
             ddata[location]['humidity'].append(int(item.get('humidity', 0)))
             ddata[location]['temperature'].append(int(item.get('temperature', 0)))
+            ddata[location]['pressure'].append(int(item.get('pressure', 0)))
+            ddata[location]['pressureHg'].append(float(item.get('pressure', 0.0))*0.0002953)
             ddata[location]['voltage'].append(int(item.get('voltage', 0)))
             # ddata[location]['time'].append(dateutil.parser.parse(item.get('time_utc_iso8601')))
             ddata[location]['time'].append(datetime.datetime.fromtimestamp((item.get('epochtime'))))
@@ -69,7 +73,7 @@ def query_dynamo(table=None, location=None):
     startdate = str((datetime.datetime.utcnow() - datetime.timedelta(days=7)))
     enddate = str(datetime.datetime.utcnow())
     response = table.query(
-        ProjectionExpression="humidity, temperature, setpoint, epochtime, voltage",
+        ProjectionExpression="humidity, temperature, pressure, setpoint, epochtime, voltage",
         # ExpressionAttributeNames={"#yr": "year"},  # Expression Attribute Names for Projection Expression only.
         # KeyConditionExpression=Key('year').eq(1992) & Key('title').between('A', 'L')
         # KeyConditionExpression=Key('location').eq(location) & Key('time').between((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat(),datetime.datetime.utcnow().isoformat()),
@@ -82,7 +86,7 @@ def query_dynamo(table=None, location=None):
     results = response.get(u'Items')
     while 'LastEvaluatedKey' in response:
         response = table.query(
-            ProjectionExpression="humidity, temperature, setpoint, epochtime, voltage",
+            ProjectionExpression="humidity, temperature, pressure, setpoint, epochtime, voltage",
             KeyConditionExpression=Key('location').eq(location) & Key('epochtime').between(int(time.time() - 86400*7),int(time.time())),
             ExclusiveStartKey=response['LastEvaluatedKey']
         )
@@ -99,6 +103,7 @@ def main_run():
     dbitem['setpoint'] = int(fridgemode)
     dbitem['voltage'] = int(voltage)
     dbitem['humidity'] = int(humidity)
+    dbitem['pressure'] = int(pressure)
     dbitem['no_actuate'] = no_actuate
     dbitem['time'] = int(datetime.datetime.utcnow())
     """
@@ -129,6 +134,11 @@ def main_run():
         index=ddata['huzzah-01']['time'],
         columns=['Huzzah-01 Voltage']
     )
+    df6 = pd.DataFrame(
+        ddata['huzzah-01']['pressureHg'],
+        index=ddata['huzzah-01']['time'],
+        columns=['Huzzah-01 Pressure (Hg)']
+    )
 
     s1 = figure(title='Temperature', plot_width=800, plot_height=500, x_axis_type='datetime')
     s1.line(x=df1.index, y=df1['Shed Temp'], color="navy", legend="Shed")
@@ -136,8 +146,9 @@ def main_run():
     s1.legend.location = "bottom_left"
 
     s2 = figure(title='Humidity', plot_width=800, plot_height=500, x_axis_type='datetime')
-    s2.line(x=df3.index, y=df3['Shed Humidity'], color="navy", legend="Shed")
-    s2.line(x=df4.index, y=df4['Huzzah-01 Humidity'], color="green", legend="Huzzah-01")
+    s2.line(x=df3.index, y=df3['Shed Humidity'], color="navy", legend="Shed %H")
+    s2.line(x=df4.index, y=df4['Huzzah-01 Humidity'], color="green", legend="Huzzah-01 %H")
+    s2.line(x=df6.index, y=df6['Huzzah-01 Pressure (Hg)'], color="purple", legend="Huzzah-01 (Hg)")
     s2.legend.location = "bottom_left"
 
     s3 = figure(title='Voltage%', plot_width=800, plot_height=250, x_axis_type='datetime')

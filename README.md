@@ -1,8 +1,8 @@
-# ESP8266-Datalogger
+# ESP8266-Datalogger (BME280 version)
 Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to DynamoDB, with html plot example.
  * On the ESP side:
    * System wakes every 10 minutes from deep sleep.
-   * Gets NTP time. Reads the DHT for temp/humidity. Reads the ADC for voltage.  Puts the data on AWS DynamoDB.
+   * Gets NTP time. Reads the BME280 for temp/humidity/pressure. Reads the ADC for voltage.  Puts the data on AWS DynamoDB.
    * Lots of data gets dumped to the serial port to tell you what's going on.
    * You can enable dynamodb "TTL" to expire data. Default is to post a TTL of +60 days.
    * Serial port configuration is possible for many settings at board startup.
@@ -24,7 +24,7 @@ Logs temp, humidity, and voltage from an Feather Huzzah using Arduino IDE to Dyn
  * Make sure the DB configuration and locations match the ESP settings.
             
 **esp8266_datalogger.ino** - Arduino project for the ESP12e-ESP8266 Feather Huzzah board.
- * Hardware: Adafruit Feather Huzzah, LiPo battery, DHT11 sensor
+ * Hardware: Adafruit Feather Huzzah, LiPo battery, BME280 sensor wired for i2c
  * This makes use of the AWS SDK, and you need to create keys.h and keys.cpp within the source of the project
             containing your credentials (awsKeyID, awsSecKey) in Arduino/libraries/aws-sdk-arduino-esp8266/src/keys.*
  * Make sure the location, DB table name, and settings here for putting data into the DB matches what you 

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/bin/python
 # -*- coding: UTF-8 -*-
 #
 #  Copyright (c) 2015-2018 +++ David Smith - Smith Enterprises +++
@@ -28,6 +28,7 @@ import pandas as pd
 from bokeh.plotting import figure
 from bokeh.io import output_file, save
 from bokeh.layouts import column
+from bokeh.models import LinearAxis, Range1d
 from boto3.dynamodb.conditions import Key, Attr
 
 dynamodb_table = "sensors_v3"  # Send updates to AWS DynamoDB, or set to None to not do this.
@@ -50,7 +51,11 @@ def get_data(locations=None):
         ddata[location]['humidity'] = []
         ddata[location]['temperature'] = []
         ddata[location]['pressure'] = []
+        ddata[location]['pressure'] = []
         ddata[location]['pressureHg'] = []
+        ddata[location]['pressureHgmax'] = 0
+        ddata[location]['pressureHgmin'] = 99
+        ddata[location]['pressuretime'] = []
         ddata[location]['time'] = []
         ddata[location]['voltage'] = []
         rawdata = query_dynamo(table=table, location=location)
@@ -58,10 +63,19 @@ def get_data(locations=None):
             # pdata.append({'location':location, 'humidity':int(item.get('humidity')), 'temperature':int(item.get('temperature')), 'time':int(time.mktime((dateutil.parser.parse(item.get('epochtime'))).timetuple()))})
             ddata[location]['humidity'].append(int(item.get('humidity', 0)))
             ddata[location]['temperature'].append(int(item.get('temperature', 0)))
-            ddata[location]['pressure'].append(int(item.get('pressure', 0)))
-            ddata[location]['pressureHg'].append(float(item.get('pressure', 0.0))*0.0002953)
             ddata[location]['voltage'].append(int(item.get('voltage', 0)))
             # ddata[location]['time'].append(dateutil.parser.parse(item.get('time_utc_iso8601')))
+            if item.get('pressure'):
+                ddata[location]['pressure'].append(int(item.get('pressure', 0)))
+                ddata[location]['pressureHg'].append(float(item.get('pressure', 0.0))*0.0002953)
+                ddata[location]['pressuretime'].append(datetime.datetime.fromtimestamp((item.get('epochtime'))))
+                # I spent way too long trying to get Bokeh to auto-range the second axis and couldn't get it to work
+                # so this is here to find min/max.
+                if ddata[location]['pressureHg'][-1] > ddata[location]['pressureHgmax']:
+                        ddata[location]['pressureHgmax'] = ddata[location]['pressureHg'][-1]
+                if ddata[location]['pressureHg'][-1] < ddata[location]['pressureHgmin']:
+                        ddata[location]['pressureHgmin'] = ddata[location]['pressureHg'][-1]
+                #
             ddata[location]['time'].append(datetime.datetime.fromtimestamp((item.get('epochtime'))))
             # ddata[location]['time'].append((item.get('epochtime')))
     return ddata
@@ -136,7 +150,7 @@ def main_run():
     )
     df6 = pd.DataFrame(
         ddata['huzzah-01']['pressureHg'],
-        index=ddata['huzzah-01']['time'],
+        index=ddata['huzzah-01']['pressuretime'],
         columns=['Huzzah-01 Pressure (Hg)']
     )
 
@@ -148,7 +162,9 @@ def main_run():
     s2 = figure(title='Humidity', plot_width=800, plot_height=500, x_axis_type='datetime')
     s2.line(x=df3.index, y=df3['Shed Humidity'], color="navy", legend="Shed %H")
     s2.line(x=df4.index, y=df4['Huzzah-01 Humidity'], color="green", legend="Huzzah-01 %H")
-    s2.line(x=df6.index, y=df6['Huzzah-01 Pressure (Hg)'], color="purple", legend="Huzzah-01 (Hg)")
+    s2.extra_y_ranges = {"mmHg": Range1d(ddata['huzzah-01']['pressureHgmin']-0.005, ddata['huzzah-01']['pressureHgmax']+0.005, bounds=('auto'))}
+    s2.add_layout(LinearAxis(y_range_name="mmHg"), 'right')
+    s2.line(x=df6.index, y=df6['Huzzah-01 Pressure (Hg)'], color="purple", legend="Huzzah-01 (Hg)", y_range_name="mmHg")
     s2.legend.location = "bottom_left"
 
     s3 = figure(title='Voltage%', plot_width=800, plot_height=250, x_axis_type='datetime')
